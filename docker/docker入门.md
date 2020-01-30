@@ -161,4 +161,55 @@ docker run -itd -v 宿主机地址：容器路径 镜像
 
 ## 三. 自定义镜像
 
-### 1. 
+### 1. 基于docker commit制作镜像
+
+容器的修改和保存：
+
+```shell
+# 启动并进入容器
+docker run -it centos:7 bin/bash
+
+# 在/home路径下创建文件夹
+mkdir /home/test
+
+# 安装ifconfig
+yum -y install net-tools
+
+# 重启容器
+docker restart CONTAINER_ID/CONTAINER_NAME 
+
+# 删除容器并在此启动容器
+docker rm CONTAINER_ID/CONTAINER_NAME && docker run -it centos:7 bin/bash
+
+# 构建容器
+docker commit CONTAINER_ID/CONTAINER_NAME
+docker commit -a "author" -m "comment" CONTAINER_ID/CONTAINER_NAME
+-a:标注作者
+-m:说明注释
+
+# 查看详细信息
+docker inspect CONTAINER_ID/CONTAINER_NAME
+
+# 启动容器
+docker run -itd CONTAINER_ID/CONTAINER_NAME /bin/bash
+
+# 进入容器查看
+docker exec -it CONTAINER_ID/CONTAINER_NAME /bin/bash
+```
+
+
+
+### 2. 基于dockerFile制作镜像
+
+- DockerFile构建镜像
+
+```shell
+# this is a dockerfile
+FROM centos:7
+MAINTAINER AUTHOR 123@qq.com
+RUN echo "正在构建镜像------"
+WORKDIR /home/zr
+COPY /root/a.txt /home/zr
+RUN yum install -y net-tools
+```
+
