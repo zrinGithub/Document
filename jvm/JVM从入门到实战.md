@@ -83,8 +83,9 @@ public class A {
   - 用于作用域本地方法执行的一块Java内存区域
   - 什么是本地方法？
 - 为什么？
-  - 与Java虚拟机栈相同，每个方法在执行的同时都会创建一个栈帧（Stack Framel）用于存储局部变量表、操作数栈、动态链接、方法出口等信息。每一个方法从调用直至执行完成的过程，就对应着一个栈帧在虚拟机栈中入栈到出栈的过程
-
+  
+- 与Java虚拟机栈相同，每个方法在执行的同时都会创建一个栈帧（Stack Framel）用于存储局部变量表、操作数栈、动态链接、方法出口等信息。每一个方法从调用直至执行完成的过程，就对应着一个栈帧在虚拟机栈中入栈到出栈的过程
+  
 - 特点？
   - Hotshot将Java虚拟机栈和本地方法栈合二为一
 
@@ -264,13 +265,15 @@ public class A {
 
   * 虚拟机栈中引用的对象（本地变量表）
 * 本地方法栈中引用的对象
+  
   * 方法区中静态属性引用的对象
 * 方法区中常量引用的对象
   
 
   
+
 ![可达性分析法](.\images\可达性分析法.jpg)
-  
+
 
 
 
@@ -611,20 +614,15 @@ public class A {
 - jinfo命令使用  
 
   ```powershell
-  jinfo -flag CMSInititingOccupancyFraction 1444
+  jinfo pid
+  jinfo -flag CMSInititingOccupancyFraction pid
   ```
 
   
 
 
 
-
-
-
-### 第3集     实战应用之使用虚拟机工具jmap
-
-**简介：jmap常用命令讲解，linux命令说明书怎么看？
- **
+### 3. jmap
 
 - jmap是什么？ 
   * Jmap  (Memory Map for Java）命令用于生成堆转储快照。如果不使用 jmap 命令，要想获取 Java 堆转储快照，还有一些比较“暴力”的手段：-XX: +HeapDumpOnOutOfMemoryError 参数，可以让虚拟机在 OOM 异常出现之后自动生成 dump 文件，用于系统复盘环节
@@ -641,16 +639,22 @@ public class A {
       mac:      jmap -dump:format=b,file=/Users/daniel/deskTop
       ```
 
-      
+​      
 
   * -histo   more分页去查看
 
+    ```shell
+jmap -histo pid|more
+    ```
+
+    
+
     * 显示堆中对象统计信息，包括类、实例数量、合计容量
-
+    
     B ：byte
-
+    
     C :  char
-
+    
     I ：Int
 
 
@@ -659,12 +663,18 @@ public class A {
 
 
 
-### 第4集    实战应用之使用虚拟机工具jhat
-
-**简介：jhat命令的是什么？jhat命令的使用
- **
+### 4.  jhat
 
 - 实战OOM场景dump下内存快照
+
+```shell
+-Xms20M 初始程序内存
+-Xmx20M 运行期间最大内存
+-XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp
+```
+
+
+
 -   jhat是什么？
 - * Sun JDK 提供 jhat  (JVM Heap Analysis Tool）命令常与 jmap 搭配使用，来分析 jmap 生成的堆 转储快照。jhat内置了一个微型的HTTP/HTML服务器，生成dump文件的分析结果后，可以在浏览器中查看
 - 特点：
