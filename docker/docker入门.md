@@ -175,23 +175,28 @@ mkdir /home/test
 # 安装ifconfig
 yum -y install net-tools
 
-# 重启容器
+# 重启进入容器，此时之前创建的文件夹还在,安装的网络工具使用ifconfig也存在
 docker restart CONTAINER_ID/CONTAINER_NAME 
+docker exec -it CONTAINER_ID/CONTAINER_NAME /bin/bash
 
-# 删除容器并在此启动容器
-docker rm CONTAINER_ID/CONTAINER_NAME && docker run -it centos:7 bin/bash
+# 删除容器（这里-f是强制删除，否则需要先暂停容器）并再次启动容器
+# 此时新建的文件和yum安装的工具都不见了
+docker rm -f CONTAINER_ID/CONTAINER_NAME && docker run -it centos:7 /bin/bash
 
-# 构建容器
-docker commit CONTAINER_ID/CONTAINER_NAME
+# 构建容器，这里使用容器来构建自定义镜像，这样容器里面做的修改就能保存下来
+docker commit CONTAINER_ID/CONTAINER_NAME 自定义命名
 docker commit -a "author" -m "comment" CONTAINER_ID/CONTAINER_NAME
 -a:标注作者
 -m:说明注释
+
+如：
+docker commit -a "zr" -m "centos test" 96cef324046e mycentos:v1
 
 # 查看详细信息
 docker inspect CONTAINER_ID/CONTAINER_NAME
 
 # 启动容器
-docker run -itd CONTAINER_ID/CONTAINER_NAME /bin/bash
+docker run -itd IMAGE_ID/IMAGES_NAME /bin/bash
 
 # 进入容器查看
 docker exec -it CONTAINER_ID/CONTAINER_NAME /bin/bash
@@ -212,4 +217,30 @@ WORKDIR /home/zr
 COPY /root/a.txt /home/zr
 RUN yum install -y net-tools
 ```
+
+
+
+- 构建
+
+```shell
+docker build -t zrcentos:v1
+```
+
+
+
+- 查看
+
+```shell
+docker images
+```
+
+
+
+- 验证
+
+进入查看文件以及插件是否存在。
+
+
+
+### 3. 镜像分层结构
 
