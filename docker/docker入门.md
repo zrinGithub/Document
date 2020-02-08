@@ -1,5 +1,9 @@
 # Docker笔记
 
+[TOC]
+
+
+
 ## 一.  环境安装：
 
 - 环境说明：
@@ -206,24 +210,26 @@ docker exec -it CONTAINER_ID/CONTAINER_NAME /bin/bash
 
 ### 2. 基于dockerFile制作镜像
 
-- DockerFile构建镜像
+- Dockerfile构建镜像（COPY只能用相对路径）
 
 ```shell
+vim Dockerfile
+
 # this is a dockerfile
 FROM centos:7
 MAINTAINER AUTHOR 123@qq.com
 RUN echo "正在构建镜像------"
 WORKDIR /home/zr
-COPY /root/a.txt /home/zr
+COPY a.txt /home/zr
 RUN yum install -y net-tools
 ```
 
 
 
-- 构建
+- 构建（-t表示tag，最后的.表示当前路径）
 
 ```shell
-docker build -t zrcentos:v1
+docker build -t zrcentos:v1 .
 ```
 
 
@@ -243,4 +249,163 @@ docker images
 
 
 ### 3. 镜像分层结构
+
+
+
+![](.\images\镜像分层结构.png)
+
+- 共享资源
+- 对容器的任何修改都是发生在容器层的
+- 容器可读可写，镜像层只读
+
+
+
+### 4. Dockerfile的基础指令
+
+- FROM
+  - 基于哪一个镜像
+- MAINTAINER
+  - 作者
+- COPY
+  - 复制文件到镜像中（只能用相对路径，否则找不到）
+- ADD
+  - 复制文件进入镜像（如果文件是.tar.gz会解压）
+- WORKDIR
+  - 指定工作目录（不存在会自动创建）
+- ENV
+  - 设置环境变量
+- EXPOSE
+  - 暴露容器的端口
+- RUN
+  - 在构建镜像的时候执行，用于镜像层面
+- ENTRYPOINT
+  - 在容器启动的时候执行，作用于容器层，dockerfile里有多条指令时只允许执行最后一条。
+- CMD
+  - 在容器启动的时候执行，作用于容器层，dockerfile里有多条指令时只允许执行最后一条。
+  - 容器启动后执行默认的命令或者参数，允许被修改。
+- 命令格式：
+  - shell命令格式：RUN yum install -y net-tools
+  - exec命令格式：RUN [ "yum","install" ,"-y" ,"net-tools"]
+- Dockerfile示例
+
+```dockerfile
+#第一个
+#构建显示：
+#images building!
+#容器启动后显示:
+#container starting ！！！ echo container starting...
+FROM centos:7
+RUN echo "images building!"
+CMD ["echo","container","starting..."]
+ENTRYPOINT ["echo","container","starting ！！！"]
+#第二个
+#构建显示：
+#Using cache--和第一个相同
+#容器启动后显示:
+#container2 starting ！！！ echo container2 starting...
+FROM centos:7
+RUN echo "images building!"
+CMD ["echo","containe1r","starting..."]
+CMD ["echo","container2","starting..."]
+ENTRYPOINT ["echo","container","starting ！！！"]
+ENTRYPOINT ["echo","container2","starting ！！！"]
+#第三个
+#容器启动后显示ps -ef效果
+FROM centos:7
+CMD ["-ef"]
+ENTRYPOINT ["ps"]
+```
+
+
+
+## 四. 自定义环境实战
+
+### 1. Java网站镜像
+
+- 本地宿主机配置jdk
+
+```shell
+# 新增环境变量
+vi /etc/profile
+export JAVA_HOME=/usr/local/jdk
+export JRE_HOME=$JAVA_HOME/jre
+export CLASSPATH=$JAVA_HOME/lib:$JRE_HOME/lib:$CLASSPATH
+export PATH=$JAVA_HOME/bin:$JRE_HOME/bin:$PATH
+
+# 生效
+source /etc/profile
+
+# 检验
+java -version
+```
+
+
+
+- 使用Dockerfile配置
+
+```dockerfile
+# 编辑Dockerfile
+vi Dockerfile
+
+FROM centos:7
+ADD jdk-8u211-linux-x64.tar.gz /usr/local
+RUN mv /usr/local/jdk1.8.0_211 /usr/local/jdk
+ENV JAVA_HOME=/usr/local/jdk
+ENV JRE_HOME=$JAVA_HOME/jre
+ENV CLASSPATH=$JAVA_HOME/lib:$JRE_HOME/lib:$CLASSPATH
+ENV PATH=$JAVA_HOME/bin:$JRE_HOME/bin:$PATH
+ADD apache-tomcat-8.5.35.tar.gz /usr/local
+RUN mv /usr/local/apache-tomcat-8.5.35 /usr/local/tomcat
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/tomcat/bin/catalina.sh","run"]
+
+# 当前目录下构建镜像
+docker build -t zrcentos:jdk .
+
+# 启动容器
+docker run -itd -p 80:8080 -v /root/test/ROOT:/usr/local/tomcat/webapps/ROOT zrcentos:jdk /bin/bash
+
+# 进入容器
+docker exec -it CONTAINER_ID /bin/bash
+
+# 网站访问
+http://ip:80
+```
+
+可以在挂载的路径加上文件index.html这样就能访问。
+
+
+
+### 2.构建nginx镜像
+
+```dockerfile
+# 编辑Dockerfile
+vi Dockerfile
+
+FROM centos:7
+ADD nginx-1.16.0.tar.gz /usr/local
+COPY nginx_install.sh /usr/local
+RUN sh /usr/local/nginx_install.sh
+EXPOSE 80
+
+# 编辑nginx的安装脚本
+vi nginx_install.sh
+
+#!/bin/bash
+yum install -y gcc gcc-c++ make pcre pcre-devel zlib zlib-devel
+cd /usr/local/nginx-1.16.0
+./configure --prefix=/usr/local/nginx && make && make install
+
+
+# 制作镜像
+docker build -t zrcentos:nginx
+
+# 这里容器nginx是以daemon方式启动，退出容器，nginx也会停止
+/usr/local/nginx/sbin/nginx
+# 使用前台方式启动
+/usr/local/nginx/sbin/nginx -g "daemon off;"
+
+# 启动容器
+docker run -itd -p 80:80 zrcentos:nginx /usr/local/nginx/sbin/nginx -g "daemon off;"
+```
 
