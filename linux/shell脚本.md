@@ -582,10 +582,114 @@ df -h | awk 'NR>=2 && NR<=5' /etc/passwd
 ```
 
 >$1 #代表第一列
+>
 >$2 #代表第二列
+>
 >$0 #代表一整行
 
 
 
 ### 4. sed
+
+- 作用：对数据进行处理（选取，新增，替换，删除，搜索）
+
+- 语法：sed \[选项][动作] 文件名
+
+  常见的选项与参数：
+
+```shell
+-n #把匹配到的行输出打印到屏幕
+p #以行为单位进行查询，通常与-n一起使用
+df -h | sed -n '2p'
+
+d #删除
+sed '2d' df.txt	# 只是输出删除了，不会对源文件删除	
+#文件来源： df -h > df.txt
+
+a #在行的下面插入新的内容
+sed '2a 1234567890' df.txt
+
+i #在行的上面插入新的内容
+sed '2i 1234567890' df.txt
+
+c #替换
+sed '2c 1234567890' df.txt
+
+s/要被取代的内容/新的字符串/g #指定内容进行替换
+sed 's/0%/100%/g' df.txt
+
+-i #对源文件进行修改(高危操作，慎用，用之前需要备份源文件)
+sed -i 's/0%/100%/g' df.txt
+
+# 搜索
+cat -n df.txt | sed -n '/100%/p'
+
+-e #表示可以执行多条动作
+cat -n df.txt | sed -n -e 's/100%/100%-----100%/g' -e '/100%-----100%/p'
+```
+
+
+
+## 五.  循环控制
+
+### 1. if
+
+- 语法：
+
+```shell
+# if
+if [ 条件判断 ]
+	then
+	执行动作
+fi
+
+# if-else
+if [ 条件判断 ]
+	then
+	执行动作
+else
+	执行动作
+fi
+
+# if-else-if
+if [条件判断]
+    then
+    执行动作
+elif [条件判断]
+    then
+    执行动作
+elif [条件判断]
+    then
+    执行动作
+fi
+
+# 示例
+#!/bin/bash
+#判断输入的数字是否大于10
+read -p "请输入数字：" number
+
+if [ $number -eq 10 ]
+        then
+        echo '等于10'
+elif [ $number -lt 10 ]
+        then
+        echo '小于10'
+elif [ $number -gt 10 ]
+        then
+        echo '大于10'
+fi
+```
+
+
+
+### 2. for
+
+- 语法：
+
+```shell
+for 变量名 in 值1 值2 值3
+do
+执行动作
+done
+```
 
