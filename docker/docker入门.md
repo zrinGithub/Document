@@ -320,6 +320,10 @@ ENTRYPOINT ["ps"]
 
 ## 四. 自定义环境实战
 
+官方网址： https://hub.docker.com/ 
+
+
+
 ### 1. Java网站镜像
 
 - 本地宿主机配置jdk
@@ -396,9 +400,8 @@ yum install -y gcc gcc-c++ make pcre pcre-devel zlib zlib-devel
 cd /usr/local/nginx-1.16.0
 ./configure --prefix=/usr/local/nginx && make && make install
 
-
 # 制作镜像
-docker build -t zrcentos:nginx
+docker build -t zrcentos:nginx .
 
 # 这里容器nginx是以daemon方式启动，退出容器，nginx也会停止
 /usr/local/nginx/sbin/nginx
@@ -408,4 +411,70 @@ docker build -t zrcentos:nginx
 # 启动容器
 docker run -itd -p 80:80 zrcentos:nginx /usr/local/nginx/sbin/nginx -g "daemon off;"
 ```
+
+
+
+### 3. redis镜像
+
+```dockerfile
+# 编辑Dockerfile
+FROM centos:7
+ADD redis-4.0.9.tar.gz /home
+COPY redis_install.sh /home
+RUN sh /home/redis_install.sh
+ENTRYPOINT /usr/local/redis/bin/redis-server /usr/local/redis/conf/redis.conf
+
+# 编辑redis安装脚本
+#!/bin/bash
+yum install -y gcc gcc-c++ make openssl openssl-devel
+cd /home/redis-4.0.9
+make && make PREFIX=/usr/local/redis install
+mkdir -p /usr/local/redis/conf/
+cp /home/redis-4.0.9/redis.conf /usr/local/redis/conf/
+sed -i '69s/127.0.0.1/0.0.0.0/' /usr/local/redis/conf/redis.conf
+sed -i '88s/protected-mode yes/protected-mode no/' /usr/local/redis/conf/redis.conf
+
+# 制作镜像
+docker build -t zrcentos:redis .
+
+# 启动容器
+docker run -itd -p 6380:6379 zrcentos:redis
+
+# 进入容器
+docker exec -it CONTAINER_ID /bin/bash
+
+# 容器内连接
+/usr/local/redis/bin/redis-cli -p 6380
+```
+
+
+
+### 4. mysql镜像
+
+```dockerfile
+# 拉取镜像
+docker pull mysql:5.7
+
+# 启动镜像，参考:https://hub.docker.com/_/mysql
+docker run --name some-mysql -p 3307:3306 -e MYSQL_ROOT_PASSWORD=123456 -d mysql:5.7
+
+# 进入镜像
+docker exec -it CONTAINER_ID env LANG=C.UTF-8 /bin/bash
+
+# 编辑Dockerfile
+# init.sql 可以在初始化时候运行
+FROM mysql:5.7
+WORKDIR /docker-entrypoint-initdb.d
+ENV LANG=C.UTF-8
+ADD init.sql  .
+
+# 测试sql语句
+mysql -uroot -p123456
+```
+
+
+
+## 五. 网络模式与特权指令
+
+
 
