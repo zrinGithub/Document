@@ -567,7 +567,7 @@ df -h |grep /dev/sda1 | awk '{printf "/dev/sda1的使用率是："} {print $5 }'
 echo "scale=2; 0.13 + 0.1" | bc | awk '{printf "%.4f\n", $0}'
 
 -F #指定分割符
-cat /etc/passwd | awk -F":" '{print $1}'
+cat /etc/passwd | awk -F ":" '{print $1}'
 
 BEGIN #在读取所有行内容前就开始执行，常常被用于修改内置变量的值
 FS #BEGIN时定义分割符
@@ -688,8 +688,296 @@ fi
 
 ```shell
 for 变量名 in 值1 值2 值3
+    do
+    执行动作
+    done
+   
+for 变量名 in `命令`   
+	do
+    执行动作
+    done
+   
+for ((条件))
+	do
+    执行动作
+    done
+    
+# 示例
+
+#!/bin/bash
+for i in 1 2 3 0 9
+do
+echo $i
+done
+
+#!/bin/bash
+for i in `seq 4 14`
+do
+echo $i
+done
+
+#!/bin/bash
+for ((i=1;i<11;i++))
+do
+echo $i
+done
+
+#!/bin/bash
+for i in $(cat a.txt)
+do
+ping -c 2 $i
+done
+
+cat > a.txt
+www.baidu.com
+www.taobao.com
+```
+
+
+
+### 3. case
+
+- 语法
+
+```shell
+case 变量 in
+值1 )
+执行动作1
+;;
+值2 )
+执行动作2
+;;
+值3 )
+执行动作3
+;;
+....
+esac
+
+# 示例
+#!/bin/bash
+read -p "input your city:" city
+case $city in
+'A')
+echo 'A:1'
+;;
+'B')
+echo 'B:2'
+;;
+'C')
+echo 'C:3'
+;;
+*)
+echo 'cannot recognize'
+esac
+```
+
+
+
+### 4. while
+
+- 语法：
+
+```shell
+while [ 条件判断式 ]
 do
 执行动作
 done
+```
+
+- 示例：
+
+```shell
+vim whileTest.sh
+
+#!/bin/bash
+i=0
+sum=0
+while [ $i -lt $1 ]
+do
+sum=$(($sum+$i))
+i=$(($i+1))
+done
+echo "the sum is : $sum"
+
+sh whileTest.sh 101
+the sum is : 5050
+```
+
+
+
+## 六. 常用脚本
+
+### 1. 选择脚本 
+
+```shell
+vim cmdChoose.sh
+
+#!/bin/bash
+while [ 1 ]
+do
+# 这里的EOF只要前后一直就可以了，可以改为AA、BB
+cat << EOF
+**********************************
+1. 计算你输入的目录下有多少文件		
+2. 计算从0加到输入的数字
+3. 批量创建用户
+4. 测试用户名密码是否匹配
+5. 测试ip
+6. 巡检内存使用率
+7. 数据库查询学生成绩
+q. 退出
+**********************************
+EOF
+
+echo "输入选项："
+read key
+case $key in
+# 计算你输入的目录下有多少文件
+1 )
+clear
+sh countFiles.sh
+;;
+
+# 计算从0加到输入的数字
+2 )
+clear
+sh countNums.sh
+;;
+
+# 批量创建用户
+3 )
+clear
+sh batchCreateUser.sh
+;;
+
+# 测试用户名密码是否匹配
+4 )
+clear
+sh testPassword.sh
+;;
+
+# 测试ip
+5 )
+clear
+sh testIp.sh
+;;
+
+# 巡检内存使用率
+6 )
+clear
+sh testDf.sh
+;;
+
+# 数据库查询学生成绩
+7 )
+clear
+sh selectScores.sh
+;;
+
+# 退出
+q )
+clear
+echo '-------quit-------'
+break
+;;
+esac
+done
+```
+
+### 2. 计算输入的目录有多少文件
+
+```shell
+vim countFiles.sh
+
+#!/bin/bash
+# 计算输入的目录有多少文件
+# 直接输出
+echo "统计当前目录下文件的个数（包括子文件夹）："`ls -lR $1|grep "^-"|wc -l`
+# 赋值给变量
+dNum=`ls -l $1|grep "^d"|wc -l`
+echo "当前目录下文件夹的个数：$dNum"
+echo "当前目录下文件的个数："`ls -l $1|grep "^-"|wc -l`
+```
+
+### 3. 计算从0加到输入的数字
+
+```shell
+vim countFiles.sh
+
+#!/bin/bash
+# 计算从0加到输入的数字
+i=0
+sum=0
+while [ $i -le $1 ]
+do
+sum=$(($sum+$i))
+i=$(($i+1))
+done
+echo "结果是 ： $sum"
+```
+
+### 4. 批量创建用户
+
+```shell
+vim batchCreateUser.sh
+
+#!/bin/bash
+# 批量创建用户
+
+```
+
+### 5. 验证用户名密码
+
+```shell
+vim testPassword.sh
+
+#!/bin/bash
+# 
+```
+
+### 6. 测试ip
+
+```shell
+vim testIp.sh
+
+#!/bin/bash
+# 
+```
+
+### 7. 巡检内存使用率
+
+```shell
+vim testDf.sh
+
+#!/bin/bash
+# 巡检内存使用率
+mem_total=`free -m | sed -n '2p' | awk {'print $2'}`
+mem_used=`free -m | sed -n '2p' | awk {'print $3'}`
+mem_free=`free -m | sed -n '2p' | awk {'print $4'}`
+Percent_mem_used=`echo "scale=2; $mem_used/$mem_total*100" | bc`
+Percent_mem_free=`echo "scale=2; $mem_free/$mem_total*100" | bc`
+now_time=`date "+%Y-%m-%d %H-%M-%S 星期%w"`
+echo -e "\n"
+echo -e "$now_time\n内存的使用率是：$Percent_mem_used%"
+echo -e "内存还剩：$Percent_mem_free%"
+
+# 检查负载是否有压力(超过1M)
+if [ $mem_used -gt 1 ]
+	then
+	echo -e "\033[31m 内存使用率已经超过负载能力，目前使用率达到：$Percent_mem_used% \033[0m"
+else
+	echo '目前内存负载正常'
+fi
+
+echo -e "\n"
+```
+
+### 8. 数据库查询学生成绩
+
+```shell
+vim selectScores.sh
+
+#!/bin/bash
+# 
 ```
 
