@@ -923,8 +923,34 @@ vim batchCreateUser.sh
 
 #!/bin/bash
 # 批量创建用户
-
+read -p '用户名称：' name
+read -p '用户数量：' number
+for(( i=1;i<=$number;i++ ))
+do
+	cat /etc/passwd | grep "${name}$i" 1>/dev/null
+	# 查看是否存在用户
+	if_exist=`echo $?`
+	if [ $if_exist -eq 1 ]
+		then
+		# 创建用户
+		useradd ${name}$i 2>/dev/null && echo "创建用户${name}$i成功！"
+		
+		# 生成随机密码
+		password=`head -2 /dev/urandom | md5sum | cut -c 1-8`
+		# 给新用户设置密码并把用户名密码放在文本中
+		echo $password | passwd --stdin ${name}$i
+		echo "${name}$i:$password" >> /home/shell/newuser_passwd.txt
+	else
+    	echo "${name}$i用户已经存在"
+	fi
+done
 ```
+
+> 删除用户以及主目录：
+>
+>  userdel -r username
+
+
 
 ### 5. 验证用户名密码
 
