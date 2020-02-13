@@ -208,3 +208,7 @@ zkServer.sh start
 zkServer.sh status
 ```
 
+
+
+### 5. Kafka安装
+
