@@ -212,3 +212,27 @@ zkServer.sh status
 
 ### 5. Kafka安装
 
+```shell
+# 1.解压
+tar -xzvf kafka_2.11-2.1.1.tgz -C /usr/local
+
+# 2.配置环境变量
+vim /etc/profile
+
+export KAFKA_HOME=/usr/local/kafka_2.11-2.1.1
+export PATH=$KAFKA_HOME/bin:$PATH
+
+# 3.配置修改
+mkdir -p /opt/data/kafka/logs
+vim config/server.properties
+
+# 指定代理的id，需要保证同一个集群下面的broker.id唯一
+# 这里直接和zookeeper的myid保持一致
+broker.id=1
+# 指定日志存储路径
+log.dirs=/opt/data/kafka/logs
+
+# 4.验证
+
+```
+
