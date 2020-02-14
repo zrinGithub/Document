@@ -133,6 +133,10 @@
   显示行号
   
   nl /etc/passwd
+  
+-  echo $LANG
+
+   查看字符集
 
 
 
@@ -958,7 +962,7 @@ done
 vim testPassword.sh
 
 #!/bin/bash
-# 
+# 参考数据库查询脚本
 ```
 
 ### 6. 测试ip
@@ -967,7 +971,7 @@ vim testPassword.sh
 vim testIp.sh
 
 #!/bin/bash
-# 
+# 参考for里面的脚本
 ```
 
 ### 7. 巡检内存使用率
@@ -1004,6 +1008,32 @@ echo -e "\n"
 vim selectScores.sh
 
 #!/bin/bash
-# 
+# 数据库查询学生成绩
+read -p '输入学生姓名：' sname
+read -s -p '输入数据库用户：' user
+echo -e "\n"
+read -s -p '输入数据库密码：' pass
+sql="select * from student.user where name='${sname}';"
+# -e 表示非交互执行sql，也就是在shell中直接执行sql
+mysql -u${user} -p -e "${sql}"
+exit
 ```
 
+
+
+## 七. 登录其他机器
+
+```shell
+# 记录地址
+vim ip.txt
+
+A|192.168.199.200
+B|192.168.199.201
+C|192.168.199.202
+
+# 登录脚本
+#!/bin/bash
+# 登录其他机器
+RegionIp=`cat /root/ip.txt | grep $1 | awk -F "|" '{print $2}'`
+ssh ${RegionIp}
+```
