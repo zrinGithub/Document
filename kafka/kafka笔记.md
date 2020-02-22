@@ -210,7 +210,7 @@ zkServer.sh status
 
 
 
-### 5. Kafka安装
+### 5. Kafka集群安装
 
 ```shell
 # 1.解压
@@ -231,8 +231,57 @@ vim config/server.properties
 broker.id=1
 # 指定日志存储路径
 log.dirs=/opt/data/kafka/logs
+# 连接到zookeeper集群
+zookeeper.connect=server-1:2181,server-2:2181,server-3:2181
 
 # 4.验证
+kafka-server-start.sh -daemon config/server.properties
+
+# 查看java进程
+jps
+
+1718 Kafka			
+1356 QuorumPeerMain #zookeeper
+
+# 进入zookeeper
+zkCli.sh -server server-1:2181
+# 查看已经启动的代理节点
+ls /brokers/ids
+```
+
+ 
+
+
+
+## 三. kafka源码环境搭建
+
+### 1. scala安装
+
+[下载地址]( https://www.scala-lang.org/download/ )
+
+```shell
+#下载scala-2.13.1.msi后直接安装
+
+# 配置环境变量，在path中添加%SCALA_HOME%\bin
+SCALA_HOME=
 
 ```
+
+
+
+### 2. gradle安装
+
+
+
+### 3. 下载编译源码
+
+github地址：https://github.com/apache/kafka.git
+
+
+
+## 四. kafka基本操作
+
+### 1. KafkaServer
+
+这里查看
 
