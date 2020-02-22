@@ -252,6 +252,40 @@ echo "脚本名称：$0"
 
 
 
+注意：**$*和$@的区别**
+
+ $* 和 $@ 都表示传递给函数或脚本的所有参数 
+
+```shell
+vim test.sh
+
+#!/bin/bash
+echo "print each param from \"\$*\""
+for var in "$*"
+do
+    echo "$var"
+done
+
+echo "print each param from \"\$@\""
+for var in "$@"
+do
+    echo "$var"
+done
+
+# 执行
+sh test.sh a b c d
+
+print each param from "$*"
+a b c d
+print each param from "$@"
+a
+b
+c
+d
+```
+
+
+
 ### 2. 符号
 
 ```shell
