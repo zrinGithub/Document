@@ -137,6 +137,20 @@
 -  echo $LANG
 
    查看字符集
+   
+-  basename 取得文件文档名
+
+   dirname 取得文件的目录名
+
+   ```shell
+   basename /etc/passwd
+   passwd
+   
+   dirname /etc/passwd    
+   /etc
+   ```
+
+   
 
 
 
@@ -225,6 +239,9 @@ rwx r:4 w:2 x:1
 123
 # echo ${b}hello
 123hello
+
+# 使用$()把执行结果返回给变量
+date1=$(date --date='2 days ago' +%Y-%m-%d)
 
 # $?获取函数返回值上一个命令的退出状态
 #echo $?
@@ -600,6 +617,9 @@ printf '%s\t%s\t%s\n' 1 2 3 4 5 6
 ```shell
 # 存储情况查询
 df -h |grep /dev/sda1 | awk '{printf "/dev/sda1的使用率是："} {print $5 }'
+
+# 查看进程的pid
+jps | grep -i KAFKA | awk -F" " '{print $1}'
 
 # 小数处理
 echo "scale=2; 0.13 + 0.1" | bc | awk '{printf "%.4f\n", $0}'
@@ -1071,3 +1091,81 @@ C|192.168.199.202
 RegionIp=`cat /root/ip.txt | grep $1 | awk -F "|" '{print $2}'`
 ssh ${RegionIp}
 ```
+
+
+
+## 八. 常用脚本解析
+
+### 1. kafka脚本
+
+- 启动脚本
+
+```shell
+# 一般使用方式
+kafka-server-start.sh -daemon config/server.properties
+
+vim kafka-server-start.sh
+
+# 判定参数，$#表示参数数量
+if [ $# -lt 1 ];
+then
+        echo "USAGE: $0 [-daemon] server.properties [--override property=value]*
+"
+        exit 1
+fi
+
+# $0脚本名称，这里base_dir=脚本路径
+base_dir=$(dirname $0)
+
+# $KAFKA_LOG4J_OPTS如果为空，则添加日志配置
+if [ "x$KAFKA_LOG4J_OPTS" = "x" ]; then
+    export KAFKA_LOG4J_OPTS="-Dlog4j.configuration=file:$base_dir/../config/log4
+j.properties"
+fi
+
+# $KAFKA_HEAP_OPTS为空，则设置堆内存为1G
+if [ "x$KAFKA_HEAP_OPTS" = "x" ]; then
+    export KAFKA_HEAP_OPTS="-Xmx1G -Xms1G"
+fi
+
+# 配置参数
+EXTRA_ARGS=${EXTRA_ARGS-'-name kafkaServer -loggc'}
+
+# 获取后台执行参数
+COMMAND=$1
+case $COMMAND in
+  -daemon)
+    EXTRA_ARGS="-daemon "$EXTRA_ARGS
+    # 这里使用shift吧-daemon参数略过了，所以最后$@不会重复带这个参数
+    shift
+    ;;
+  *)
+    ;;
+esac
+
+# 执行目录下的kafka-run-class.sh脚本
+exec $base_dir/kafka-run-class.sh $EXTRA_ARGS kafka.Kafka "$@"
+```
+
+
+
+
+
+- 关闭脚本
+
+```shell
+vim kafka-server-stop.sh
+
+
+SIGNAL=${SIGNAL:-TERM}
+PIDS=$(ps ax | grep -i 'kafka\.Kafka' | grep java | grep -v grep | awk '{print $
+1}')
+
+if [ -z "$PIDS" ]; then
+  echo "No kafka server to stop"
+  exit 1
+else
+  kill -s $SIGNAL $PIDS
+fi
+```
+
