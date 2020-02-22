@@ -281,7 +281,81 @@ github地址：https://github.com/apache/kafka.git
 
 ## 四. kafka基本操作
 
-### 1. KafkaServer
+### 1. 直接启动和节点
 
-这里查看
+kafka-server-start.sh具体脚本解析可以查看[shell脚本](https://github.com/zrinGithub/Document/blob/master/linux/shell脚本.md) 
+
+核心的部分为：`exec $base_dir/kafka-run-class.sh $EXTRA_ARGS kafka.Kafka "$@"`
+
+也就是执行kafka-run-class.sh
+
+```shell
+# 三个节点启动kafka
+kafka-server-start.sh -daemon ../config/server.properties
+
+# 进入zookeeper查看
+# 查看节点
+ls /brokers/ids
+[1, 2, 3]
+
+# 查看控制器，这里leader为1号节点,杀掉1号进程会自动选举leader
+get /controller
+{"version":1,"brokerid":1,"timestamp":"1582399363346"}
+cZxid = 0x300000018
+ctime = Sun Feb 23 03:22:43 CST 2020
+mZxid = 0x300000018
+mtime = Sun Feb 23 03:22:43 CST 2020
+pZxid = 0x300000018
+cversion = 0
+dataVersion = 0
+aclVersion = 0
+ephemeralOwner = 0x2706dd82d790000
+dataLength = 54
+numChildren = 0
+
+# 查看节点信息
+# "jmx_port":-1，这里如果需要开启JMX监控，可以在启动脚本增加配置
+# export JMX_PORT=9999
+# 或者启动时指定
+# JMX_PORT=9999 kafka-server-start.sh -daemon ../config/server.properties
+get /brokers/ids/1
+{"listener_security_protocol_map":{"PLAINTEXT":"PLAINTEXT"},"endpoints":["PLAINTEXT://server-1:9092"],"jmx_port":-1,"host":"server-1","timestamp":"1582399362931","port":9092,"version":4}
+cZxid = 0x300000017
+ctime = Sun Feb 23 03:22:42 CST 2020
+mZxid = 0x300000017
+mtime = Sun Feb 23 03:22:42 CST 2020
+pZxid = 0x300000017
+cversion = 0
+dataVersion = 0
+aclVersion = 0
+ephemeralOwner = 0x2706dd82d790000
+dataLength = 186
+numChildren = 0
+```
+
+
+
+### 2. 启动集群的脚本
+
+```shell
+#!/bin/bash
+# 这些是/etc/hosts里面配置完成的
+brokers="server-1 server-2 server-3"
+KAFKA_HOME=" /usr/local/kafka_2.11-2.1.1"
+
+echo "INFO:BEGAIN to start kafka cluster------"
+
+for broker in $brokers
+do
+	echo "INFO:Start kafka on ${broker}------"
+	ssh $broker -C "source /etc/profile;sh ${KAFKA_HOME}/bin/kafka-server-start.sh -daemon ${KAFKA_HOME}/config/server.properties"
+	if [ $? -eq 0 ];then
+		echo "INFO:${broker} Start successfully"
+	fi
+done
+
+echo "INFO:Kafka cluster starts successfully!"
+```
+
+
 
