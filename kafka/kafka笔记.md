@@ -281,7 +281,7 @@ github地址：https://github.com/apache/kafka.git
 
 ## 四. kafka基本操作
 
-### 1. 直接启动和节点
+### 1. 直接启动查看节点
 
 kafka-server-start.sh具体脚本解析可以查看[shell脚本](https://github.com/zrinGithub/Document/blob/master/linux/shell脚本.md) 
 
@@ -358,4 +358,30 @@ echo "INFO:Kafka cluster starts successfully!"
 ```
 
 
+
+### 3. 关闭集群脚本
+
+```shell
+#!/bin/bash
+# 这些是/etc/hosts里面配置完成的
+brokers="server-1 server-2 server-3"
+KAFKA_HOME=" /usr/local/kafka_2.11-2.1.1"
+
+echo "INFO:BEGAIN to shut down kafka cluster------"
+
+for broker in $brokers
+do
+	echo "INFO:Shut down kafka on ${broker}------"
+	ssh $broker -C "sh ${KAFKA_HOME}/bin/kafka-server-stop.sh"
+	if [ $? -eq 0 ];then
+		echo "INFO:${broker} Shut down successfully"
+	fi
+done
+
+echo "INFO:Kafka cluster shut down successfully!"
+```
+
+
+
+### 4. 主题管理
 
