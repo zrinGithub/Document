@@ -570,13 +570,29 @@ return player;
 
  
 
-### 4. redis作为mybatis二级缓存整合
+### 4. mybatis的一级缓存与二级缓存
 
 - mybatis一级缓存： 是指Session缓存。一级缓存的作用域默认是一个SqlSession。Mybatis默认开启一级缓存。  同一个SqlSession中，执行相同的查询SQL，第一次会去数据库进行查询，并写到缓存中；第二次以后是直接去缓存中取。
 
   当Mybatis整合Spring后，直接通过Spring注入Mapper的形式，如果不是在同一个事务中每个Mapper的每次查询操作都对应一个全新的SqlSession实例，这个时候就不会有一级缓存的命中，但是在同一个事务中时共用的是同一个SqlSession。 
 
-- Mybatis的二级缓存是指mapper映射文件。二级缓存的作用域是同一个namespace下的mapper映射文件内容，多个SqlSession共享。Mybatis需要手动设置启动二级缓存。 
+  也就是service中同一个方法会使用一个sqlSession：
+
+  ```java
+   public void testCache(Integer id) {
+  	Player player1 = dao.selectById(id);
+      System.out.println(JSON.toJSONString(player1));
+      //日志只会查询一次数据库
+      Player player2 = dao.selectById(id);
+      System.out.println(JSON.toJSONString(player2));
+  }
+  ```
+
+  
+
+- Mybatis的二级缓存是指mapper映射文件。二级缓存的作用域是同一个namespace下的mapper映射文件内容，多个SqlSession共享。Mybatis需要手动设置启动二级缓存。
+
+  也就是只要是mapper下面同一个查询，只会到数据库查询一次。 
 
 ```yml
 # 开启缓存，默认就是true
@@ -589,34 +605,56 @@ mybatis:
 
 
 
-
-
-
-
-
-
-
-
-**简介：整合讲解**
-
-- springboot cache的使用：可以结合redis、ehcache等缓存 一级缓存是：sqlSession，sql建立连接到关闭连接的数据缓存 二级缓存是：全局
-
-  - @CacheConfig(cacheNames="userInfoCache") 在同个redis里面必须唯一
-  - @Cacheable(查) ： 来划分可缓存的方法 - 即，结果存储在缓存中的方法，以便在后续调用（具有相同的参数）时，返回缓存中的值而不必实际执行该方法
-  - @CachePut（修改、增加） ： 当需要更新缓存而不干扰方法执行时，可以使用@CachePut注释。也就是说，始终执行该方法并将其结果放入缓存中（根据@CachePut选项）
-  - @CacheEvict（删除） ： 对于从缓存中删除陈旧或未使用的数据非常有用，指示缓存范围内的驱逐是否需要执行而不仅仅是一个条目驱逐
-
-   
+### 5.springboot缓存
 
 - springboot cache的整合步骤
 
   - 引入pom.xml依赖
 
-    org.springframework.boot spring-boot-starter-cache
+    ```xml
+    <dependency>
+    	<groupId>org.springframework.boot</groupId>
+    	<artifactId>spring-boot-starter-cache</artifactId>
+    </dependency>
+    ```
 
-  - 开启缓存注解： @EnableCaching
+    
 
-  - 在方法上面加入SpEL
+  - 开启缓存注解：
+
+    ```java
+    @EnableCaching
+    @SpringBootApplication
+    public class RedisDemoApplication {
+    ......
+    }
+    ```
+
+    
+
+  - 在方法上面加入SpEL表达式
+
+    - @CacheConfig(cacheNames="userInfoCache") 
+      - 在同个redis里面必须唯一
+    - @Cacheable(查) ： 
+      - 划分可缓存的方法 - 即，结果存储在缓存中的方法，以便在后续调用（具有相同的参数）时，返回缓存中的值而不必实际执行该方法
+    - @CachePut（修改、增加） ：
+      -  当需要更新缓存而不干扰方法执行时，可以使用@CachePut注释。也就是说，始终执行该方法并将其结果放入缓存中（根据@CachePut选项）
+    - @CacheEvict（删除）： 
+      - 对于从缓存中删除陈旧或未使用的数据非常有用，指示缓存范围内的驱逐是否需要执行而不仅仅是一个条目驱逐
+
+    ```java
+    //查询
+    // @Cacheable 会先查询缓存，如果缓存中存在，则不执行方法
+    @Cacheable(key = "#p0", unless = "#result == null || #result.isEmpty()")
+    public Player selectById(Integer id) {
+    	System.out.printf("查询id=s%的运动员", id);
+        Assert.notNull(id, "id不能为空");
+        return dao.selectById(id);
+    }
+    ```
+
+    
 
 - springboot cache 存在什么问题
 
@@ -629,36 +667,6 @@ mybatis:
   - 自定义KeyGenerator
   - 自定义cacheManager，设置缓存过期时间
   - 自定义序列化方式，Jackson
-
- 
-
-### 第7集 redis作为mybatis缓存整合讲解 （下）
-
-**简介：通过类比法进行学习可以增强我们的知识掌握程度，讲解事务概要和事务隔离级别**
-
-- 一个数据库事务通常包含了一个序列的对数据库的读/写操作。它的存在包含有以下两个目的：
-
-  - 为数据库操作序列提供了一个从失败中恢复到正常状态的方法，同时提供了数据库即使在异常状态下仍能保持一致性的方法。
-
-  - 当多个应用程序在并发访问数据库时，可以在这些应用程序之间提供一个隔离方法，以防止彼此的操作互相干扰。
-
-     
-
-- 事务的ACID四大特性
-
-  - 原子性（Atomicity）：事务作为一个整体被执行，包含在其中的对数据库的操作要么全部被执行，要么都不执行
-  - 一致性（Consistency）：事务应确保数据库的状态从一个一致状态转变为另一个一致状态。一致状态的含义是数据库中的数据应满足完整性约束
-  - 隔离性（Isolation）：多个事务并发执行时，一个事务的执行不应影响其他事务的执行
-  - 持久性（Durability）：已被提交的事务对数据库的修改应该永久保存在数据库中
-  - 
-
- 
-
-- 事务隔离机制
-  - 语法：set global transaction isolation level read uncommitted;
-  - 种类：read uncommitted、read committed、repeatable read、serializable
-
- 
 
  
 
