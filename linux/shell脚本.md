@@ -1156,7 +1156,6 @@ exec $base_dir/kafka-run-class.sh $EXTRA_ARGS kafka.Kafka "$@"
 ```shell
 vim kafka-server-stop.sh
 
-
 SIGNAL=${SIGNAL:-TERM}
 PIDS=$(ps ax | grep -i 'kafka\.Kafka' | grep java | grep -v grep | awk '{print $
 1}')
@@ -1167,5 +1166,13 @@ if [ -z "$PIDS" ]; then
 else
   kill -s $SIGNAL $PIDS
 fi
+```
+
+
+
+其实可以改为：
+
+```shell
+PIDS=$(jps | grep -i KAFKA | awk -F" " '{print $1}')
 ```
 
