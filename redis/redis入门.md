@@ -668,274 +668,252 @@ mybatis:
   - 自定义cacheManager，设置缓存过期时间
   - 自定义序列化方式，Jackson
 
- 
+ **参考redisAsMybatisCache分支代码的com.zr.redisdemo.config.RedisConfig**
 
-### 第8集 redis作为mybatis缓存整合讲解 （下）
 
-**简介：压力测试redis缓存和数据库的对比级别**
+
+
+
+**压力测试redis缓存和数据库的对比级别**
 
 - apache abtest
 
   - ab是Apache HTTP server benchmarking tool，可以用以测试HTTP请求的服务器性能
 
+  - 安装：
+
+    ```shell
+    yum install -y httpd-tools
+    # 检验
+    ab -v 
+    ```
+    
+    
+    
      
 
-- 使用： ab -n1000 -c10 http://localhost:8080/getByCache?id=2 ab -n1000 -c10 http://localhost:8080/getUser?id=2
+- 使用： 
 
-  - -n:进行http请求的总个数
+  ```shell
+  # n:requests总数 c:concurrency并发数 
+  # 统计qps：qps即每秒并发数，request per second
+  ab -n1000 -c10 http://192.168.0.103:8080/cache/select/1 
+  ab -n1000 -c10 http://192.168.0.103:8080/cache/selectWithOutCache/1
+  ```
 
-  - -c:请求的client个数，也就是请求并发数
 
-  - 统计qps：qps即每秒并发数，request per second
 
-    - 统计
 
-      ```
-                   10个并发的情况下
-      ```
+### 6. redis实现分布式集群环境session共享
 
-      ```
-                   redis qps：963.85[#/sec] (mean)
-      ```
+**集群：多机器部署同一套服务（代码），性能更好，更承受更高的用户并发**
 
-      ```
-                   DB qps： 766.75 [#/sec] (mean)
-      ```
 
-      ```
-                   100个并发的情况下 1000个
-      ```
 
-      ```
-                   redis qps：1130.60 [#/sec] (mean)
-      ```
+- cookie与session
 
-      ```
-                   DB qps：956.15 [#/sec] (mean) 
-      ```
-
-      ```
-                   100个并发的情况下，进行10000个请求
-      ```
-
-      ```
-                   redsi qps: 2102.39 [#/sec] (mean)
-      ```
-
-      ```
-                   DB qps: 679.07 [#/sec] (mean)
-      ```
-
-      ```
-      
-      ```
-
-      ```
-                   500个并发的情况下，进行10000个请求
-      ```
-
-      ```
-                   redis qps：374.91 [#/sec] (mean)
-      ```
-
-      ```
-                   DB qps：扛不住                 
-      ```
-
-       
-
-   
-
-### 第9集 redis实现分布式集群环境session共享
-
-** **简介：多机器部署同一套服务（代码），性能更好，更承受更高的用户并发**
-
-- - cookie与session
-
-    - Cookie是什么？ Cookie 是一小段文本信息，伴随着用户请求和页面在 Web 服务器和浏览器之间传递。Cookie 包含每次用户访问站点时 Web 应用程序都可以读取的信息，我们可以看到在服务器写的cookie，会通过响应头Set-Cookie的方式写入到浏览器
+  - Cookie是什么？ Cookie 是一小段文本信息，伴随着用户请求和页面在 Web 服务器和浏览器之间传递。Cookie 包含每次用户访问站点时 Web 应用程序都可以读取的信息，我们可以看到在服务器写的cookie，会通过响应头Set-Cookie的方式写入到浏览器
 
   - HTTP协议是无状态的，并非TCP一样进行三次握手，对于一个浏览器发出的多次请求，WEB服务器无法区分是不是来源于同一个浏览器。所以服务器为了区分这个过程会通过一个 sessionid来区分请求，而这个sessionid是怎么发送给服务端的呢。cookie相对用户是不可见的，用来保存这个sessionid是最好不过了
 
-  - - Cookie是什么？ Cookie 是一小段文本信息，伴随着用户请求和页面在 Web 服务器和浏览器之间传递。Cookie 包含每次用户访问站点时
+  - 单机可以把session保存在内存中，分布式环境因为请求分发不一定每次都在同一台机器，所以不能保存在单台机器的内存中，这时候可以考虑保存在redis中。
 
-    - Web 应用程序都可以读取的信息，我们可以看到在服务器写的cookie，会通过响应头Set-Cookie的方式写入到浏览器
-
-       
+     
 
      
 
 - redis实现分布式集群配置过程
 
-  - org.springframework.session spring-session-data-redis
+  见代码redisSession分支
+
+  - pom引入session包
+
+  ```xml
+  <dependency>
+  	<groupId>org.springframework.session</groupId>
+      <artifactId>spring-session-data-redis</artifactId>
+  </dependency>
+  ```
+
+  
+
   - @EnableRedisHttpSession 开启redis session缓存
-  - maxInactiveIntervalInSeconds指定缓存的时间 spring:session:sessions:expires:+‘sessionId’的过期时间
 
-- 验证过程
+  ```java
+  @EnableCaching
+  @SpringBootApplication
+  //指定缓存的时间为150s->maxInactiveIntervalInSeconds
+  @EnableRedisHttpSession(maxInactiveIntervalInSeconds=150)
+  public class RedisDemoApplication {
+  	......
+  }
+  ```
 
-  - 打开隐身模式清空cookie来验证缓存的时间
+​	
+
+- 验证
+
+  - 运行两个端口不同浏览器查看
+  
+  ```java
+  @RestController
+  public class SessionController {
+  
+      @GetMapping("setSession")
+      public String setSession(HttpServletRequest request) {
+          Map<String, Object> map = new HashMap<>();
+          HttpSession session = request.getSession();
+          session.setAttribute("request Url", request.getRequestURL());
+          session.setAttribute("token", UUID.randomUUID());
+          return JSONObject.toJSONString(session);
+      }
+  
+      @GetMapping("getSession")
+      public String getSession(HttpServletRequest request) {
+          return request.getSession().getAttribute("token").toString();
+      }
+  }
+  ```
+  
+  
+
+> 当然，一般使用的都是自己的同一登录系统，会自己手动把需要的账户信息在登录的时候填入redis中并设置过期时间。
 
  
 
  
 
- 
 
-**![å°Dè¯¾å ](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGoAAAAiCAMAAACA9LykAAAAY1BMVEUAAAAjJikjJiojJiokJigjJikkJigjJikjJikjJikjJikkJigjJiojJiokJigjJiomJiYmJibWABPWABMmJiYmJiYmJibWABN9Ex99Ex/WABMmJiYjJiqgoKB3d3dcXFxBQUEZhcyGAAAAG3RSTlMAQIC/MGAQz9+fj+8gr3BQv4C/gCCvUN+/gGCwJXa4AAACP0lEQVRIx72W2ZLbIBBFe2EVQrLHnslCZ/n/rwwoOCDH5CWyzxO2VJy63TQlGGAQFbwEhagpOseE8BpmzRL8Cq9h9iJOw2uYWYRneBb67LtTsYiEZwXDlE47s4g8x2VsVplXuJRLGbtzUXap4zOFYvr54x16rIiFo1lS4fu3sIuFzyjhe6qcocftYukJRrQn7c0Bp6a679bcfvHDLpMCEB/jVB8bWonB4EBlq8kDjCvYVF8vlwtpA4UoMauQGeU2kZYYfBhMb9oIV7gjq6YHqrdPb28sQUEGGUsq5/ymQvLi2MUwkX5Y6lRdCgpq6VT8SHUphYphLi8z9KnIol+w4HnUqpZLJ2/+UsWpqBQvVVVcjrYiFwE5RwSZWQHlJauyesA53bAA14RQ6VWxqKIIZD5/gYLnqkJEaxGxpRccj9UNDR+2XfBZFaFgRJUt1uAhw1T1N9Wy9KrAPFSppnJwPu2uQaqT0vWqqpToTaUAJsc82b6rQ0Jz4dJU9s8tSGavQkQKXAdiXmVhBuuriNgRjWL5pprQ9mPlunPKuykIWZ+Zg1ZuBea88oNUgwpalfpQ1G0/ja6lGYoKVJYbzHiLmRke4prLJFN3KKG6+xfhHygFGwYrQ9XUVB8O65nIIBxNf9zPJ9z+ka18/816Hw7vVMZLxsMBTOvwXPikAJ1kJjgEYuzr1/XKnRSLHPlthtZq08rXYSVz7BendmIJi+7aPJJ+ixCOZY3btuw3ScMjHI9ZvZUdzq8GngYiVTQeq/kFPvQz03kWbEEAAAAASUVORK5CYII=) 愿景："让编程不在难学，让技术与生活更加有趣" 更多教程请访问 [xdclass.net](https://xdclass-html-prod.oss-cn-shenzhen.aliyuncs.com/note/最新版Redis教程.html)**
 
-------
+## 六. redis项目实战之排行榜实现
 
-## 第7章 redis项目实战之排行榜实现
+ 见代码分支：rankList
 
  
 
- 
-
-### 第1集 ZSetOperations重要api讲解（sortedSet）
-
-**简介：通过类比法进行学习可以增强我们的知识掌握程度，讲解事务概要和事务隔离级别**
+### 1. 功能
 
 - 排行榜：
   - 排行榜功能是一个很普遍的需求。使用 Redis 中有序集合的特性来实现排行榜是又好又快的选择。 一般排行榜都是有实效性的，比如“用户积分榜”，游戏中活跃度排行榜，游戏装备排行榜等。
-  - 面临问题：数据库设计复杂，并发数较高，数据要求实时性高
-- redis实现排行榜api讲解
+  - 面临问题：数据库设计复杂，**并发数**较高，数据要求**实时性**高
+- redis实现排行榜api：ZSetOperations（sortedSet）
 
  
 
- 
+### 2. mysql数据库表设计
 
-### 第2集 浅谈mysql数据库表设计过程中几个关键要点
 
-*** 简介：数据库表score_flow（积分流水表）、user_score（用户积分表总表）设计，用于：1）查top100 2）查用户的排名**
 
-- 表设计过程中应该注意的点即数据类型
+score_flow（积分流水表）查top100 
+
+user_score（用户积分表总表）查用户的排名
+
+
+
+
+
+- 表设计过程中应该注意的点：
   - 1）更小的通常更好 控制字节长度
   - 2）使用合适的数据类型： 如tinyint只占8个位，char(1024)与varchar(1024)的对比,char用于类似定长数据存储比varchar节省空间，如：uuid（32），可以用char(32).
-  - 3）尽量避免NULL建议使用NOT NULL DEFAULT ''
+  - 3）尽量避免NULL，建议使用NOT NULL DEFAULT ''
   - 4）NULL的列会让索引统计和值比较都更复杂。可为NULL的列会占据更多的磁盘空间，在Mysql中也需要更多复杂的处理程序
 
 - 索引设计过程中应该注意的点
 
-  - 选择唯一性索引 唯一性索引的值是唯一的，可以更快速的通过该索引来确定某条记录,保证物理上面唯一
+  - 选择唯一性索引：唯一性索引的值是唯一的，可以更快速的通过该索引来确定某条记录,保证物理上面唯一
   - 为经常需要排序、分组和联合操作的字段建立索引 ，经常需要ORDER BY、GROUP BY、DISTINCT和UNION等操作的字段，排序操作会浪费很多时间
   - 常作为查询条件的字段建立索引 如果某个字段经常用来做查询条件，那么该字段的查询速度会影响整个表的查询速度
+  - 数据少的地方不必建立索引，例如状态这种字段的索引，因为值很少，会占用不必要的内存。
 
-  - 数据少的地方不必建立索引
 
-    org.mybatis.generator配置讲解 引入：
 
-    ```
-        
-    ```
+- sql优化：explain查看执行计划
 
-    ```
-        <dependency>
-    ```
+  - 能用BETWEEN（取两个值之间）的时候不要用IN
 
-    ```
-      <groupId>org.mybatis.generator</groupId>
-    ```
+  - 能用DISTINCT的时候不要用GROUP BY
 
-    ```
-      <artifactId>mybatis-generator-core</artifactId>
-    ```
+  - 避免数据强制转换
 
-    ```
-      <scope>test</scope>
-    ```
+  - 使用explain来查看执行计划（扫描行数会影响CPU运行，占用大量的内存）
 
-    ```
-      <version>1.3.2</version>
-    ```
-
-    ```
-      <optional>true</optional>
-    ```
-
-    ```
-    </dependency>
-    ```
-
-    ```
+```sql
+EXPLAIN SELECT * FROM score_flow WHERE user_id=1;
     
-    ```
+id				1
+select_type		SIMPLE				查询类型
+table    		score_flow			表
+partitions		ref					ref外键关联查询
+type			ref
+possible_keys	idx_userid
+key				idx_userid
+key_len			4			
+ref				const
+rows			1					扫描行数
+filtered		100					
+Extra			
+```
 
-    ```
-    <dependency>
-    ```
+​    
 
-    ```
-      <groupId>commons-io</groupId>
-    ```
 
-    ```
-      <artifactId>commons-io</artifactId>
-    ```
 
-    ```
-      <version>2.5</version>
-    ```
 
-    ```
-    </dependency>   
-    ```
-
- 
-
-### 第3集 排行榜三大接口讲解
-
-** **简介：多机器部署同一套服务（代码），性能更好，更承受更高的用户并发**
+### 3. 排行榜接口
 
 - 添加用户积分
-
 - 获取top N 排行
-
-  - redisService新增方法reverseRangeWithScores()
-
-     
-
+- 排名范围：reverseZRankWithScore
+  - 分数范围：reverseRangeByScore 
 - 根据用户ID获取排行
 
-  - zset.rank(key,value)，key为set的名称，value为用户id
+  - reverseRank
+
+ 跟基础操作差不多，没写对应代码，参考com.zr.redisdemo.controller.RankListController。
+
+ 
+
+### 4. springboot项目初始化加载讲解
+
+考虑redis的持久化问题，可以考虑把数据保存在数据库（定时），每次springboot加载的时候同步数据到redis。
+
+
+
+- springboot实现初始化加载配置
+
+  - 实现ApplicationRunner
+
+    ```java
+    @FunctionalInterface
+    public interface ApplicationRunner {
+    	/**
+    	 * Callback used to run the bean.
+    	 */
+    	void run(ApplicationArguments args) throws Exception;
+    }
+    ```
+
+    
+
+  - 实现InitializingBean，**初始化结束前，用户请求不会进来**
+
+    ```java
+    public interface InitializingBean {
+        // 在对象的所有属性被初始化后之后才会调用afterPropertiesSet()方法
+        // 相当于最后的验证以及初始化操作
+        void afterPropertiesSet() throws Exception;
+    }
+    ```
+
+  
 
  
 
  
 
-### 第4集 springboot项目初始化加载讲解
+## 七. Redis面试题 
 
-*** 场景：将一千万用户白名单load缓存，用户请求的时候判断该用户是否是缓存里面的用户**
-
-- springboot实现初始化加载配置（实现缓存预热）
-
-  - 采用实现springboot ApplicationRunner 该方法仅在SpringApplication.run(…)完成之前调用
-
-  - 采用实现InitializingBean
-
-    InitializingBean接口为bean提供了初始化方法的方式，它只包括afterPropertiesSet()方法。 在spring初始化bean的时候，如果bean实现了InitializingBean接口， 在对象的所有属性被初始化后之后才会调用afterPropertiesSet()方法
-
-- 初始化同步redis数据
-
-- 初始化完成再放入请求
-
- 
-
- 
-
- 
-
-**![å°Dè¯¾å ](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGoAAAAiCAMAAACA9LykAAAAY1BMVEUAAAAjJikjJiojJiokJigjJikkJigjJikjJikjJikjJikkJigjJiojJiokJigjJiomJiYmJibWABPWABMmJiYmJiYmJibWABN9Ex99Ex/WABMmJiYjJiqgoKB3d3dcXFxBQUEZhcyGAAAAG3RSTlMAQIC/MGAQz9+fj+8gr3BQv4C/gCCvUN+/gGCwJXa4AAACP0lEQVRIx72W2ZLbIBBFe2EVQrLHnslCZ/n/rwwoOCDH5CWyzxO2VJy63TQlGGAQFbwEhagpOseE8BpmzRL8Cq9h9iJOw2uYWYRneBb67LtTsYiEZwXDlE47s4g8x2VsVplXuJRLGbtzUXap4zOFYvr54x16rIiFo1lS4fu3sIuFzyjhe6qcocftYukJRrQn7c0Bp6a679bcfvHDLpMCEB/jVB8bWonB4EBlq8kDjCvYVF8vlwtpA4UoMauQGeU2kZYYfBhMb9oIV7gjq6YHqrdPb28sQUEGGUsq5/ymQvLi2MUwkX5Y6lRdCgpq6VT8SHUphYphLi8z9KnIol+w4HnUqpZLJ2/+UsWpqBQvVVVcjrYiFwE5RwSZWQHlJauyesA53bAA14RQ6VWxqKIIZD5/gYLnqkJEaxGxpRccj9UNDR+2XfBZFaFgRJUt1uAhw1T1N9Wy9KrAPFSppnJwPu2uQaqT0vWqqpToTaUAJsc82b6rQ0Jz4dJU9s8tSGavQkQKXAdiXmVhBuuriNgRjWL5pprQ9mPlunPKuykIWZ+Zg1ZuBea88oNUgwpalfpQ1G0/ja6lGYoKVJYbzHiLmRke4prLJFN3KKG6+xfhHygFGwYrQ9XUVB8O65nIIBxNf9zPJ9z+ka18/816Hw7vVMZLxsMBTOvwXPikAJ1kJjgEYuzr1/XKnRSLHPlthtZq08rXYSVz7BendmIJi+7aPJJ+ixCOZY3btuw3ScMjHI9ZvZUdzq8GngYiVTQeq/kFPvQz03kWbEEAAAAASUVORK5CYII=) 愿景："让编程不在难学，让技术与生活更加有趣" 更多教程请访问 [xdclass.net](https://xdclass-html-prod.oss-cn-shenzhen.aliyuncs.com/note/最新版Redis教程.html)**
-
-------
-
-## 第8章 2018支付宝蚂蚁金服Redis面试题分析
-
- 
-
- 
-
-### 第1集 缓存的收益和成本
-
-**支付宝面试题讲解**
+### 1. 缓存的收益和成本
 
 - 缓存带来的回报
   - 高速读写
@@ -955,9 +933,7 @@ mybatis:
 
  
 
-### 第2集 2018支付宝面试题之缓存雪崩
-
-** **简介：支付宝面试题讲解**
+### 2. 缓存雪崩
 
 - 什么是缓存雪崩？你有什么解决方案来防止缓存雪崩？
   - 如果缓存集中在一段时间内失效，发生大量的缓存穿透，所有的查询都落在数据库上，造成了缓存雪崩。 由于原有缓存失效，新缓存未到期间所有原本应该访问缓存的请求都去查询数据库了，而对数据库CPU 和内存造成巨大压力，严重的会造成数据库宕机
@@ -976,9 +952,7 @@ mybatis:
 
  
 
-### 第3集 2018支付宝面试题之缓存穿透
-
-**简介：支付宝面试题讲解**
+### 3. 缓存穿透
 
 - 什么是缓存穿透？你有什么解决方案来防止缓存穿透？
   - 缓存穿透是指用户查询数据，在数据库没有，自然在缓存中也不会有。这样就导致用户查询的时候， 在缓存中找不到对应key的value，每次都要去数据库再查询一遍，然后返回空(相当于进行了两次 无用的查询)。这样请求就绕过缓存直接查数据库
