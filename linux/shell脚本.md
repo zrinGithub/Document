@@ -1176,3 +1176,17 @@ fi
 PIDS=$(jps | grep -i KAFKA | awk -F" " '{print $1}')
 ```
 
+
+
+### 2. 查看本机TCP连接数
+
+```shell
+#对包含TCP的内容进行统计
+#/^tcp/使用正则确定位置
+#$NF最后一个字段
+#++S[$NF]就是对最后一个字段进行字典统计
+netstat -n | awk '/^tcp/ {++S[$NF]} END {for(a in S) print a, S[a]}'
+```
+
+ 
+
