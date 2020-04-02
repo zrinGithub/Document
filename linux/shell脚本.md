@@ -6,6 +6,8 @@
 
 ## 一. 基础知识
 
+可参考教程： https://linuxtools-rst.readthedocs.io/zh_CN/latest/index.html 
+
 ### 1. linux基础操作：
 
 -  cd命令
@@ -1189,4 +1191,21 @@ netstat -n | awk '/^tcp/ {++S[$NF]} END {for(a in S) print a, S[a]}'
 ```
 
  
+
+## 九. 工具插件
+
+### 1. lsof（ list open files）
+
+lsof是查看当前系统文件的工具  https://linuxtools-rst.readthedocs.io/zh_CN/latest/tool/lsof.html 。
+
+```shell
+ #安装
+ yum install -y lsof
+ 
+ #列出谁在使用6379端口
+ lsof -i:6379
+ 
+ #列出所有tcp 网络连接信息
+ lsof -i tcp
+```
 
