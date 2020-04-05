@@ -259,8 +259,7 @@ public boolean getLockWithLuaScript(String key, String value, long timeout) {
 public void printDate() {
     String value = UUID.randomUUID().toString();
     try {
-        String result = getLockWithLuaScript(printDateRedisKey, value, 10L);
-        if ("OK".equals(result)) {
+        if (getLockWithLuaScript(printDateRedisKey, value, 10L)) {
             log.info("---------Date:" + LocalDateTime.now() + "---------");
         }
     } catch (Exception e) {
