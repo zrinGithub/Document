@@ -6,15 +6,13 @@
 
  
 
-## 一. JMS介绍和消息中间件核心知识
+## 一. JMS和消息中间件
 
  
 
-### 1. JMS消息服务介绍和使用场景
+### 1. JMS
 
-**简介：讲解什么是JMS，消息队列的使用场景**
-
-- 什么是JMS: Java消息服务（Java Message Service),Java平台中关于面向消息中间件的接口
+- JMS: Java消息服务（Java Message Service)，Java平台中关于面向消息中间件的接口
 - JMS是一种与厂商无关的 API，用来访问消息收发系统消息，它类似于JDBC(Java Database Connectivity)。这里，JDBC 是可以用来访问许多不同关系数据库的 API
 - 使用场景：
   - 核心应用
@@ -31,9 +29,7 @@
 
  
 
-### 第2集 消息中间件常见概念和编程模型
-
-**简介：讲解消息中间件的常见概念和基础编程模型**
+### 2. 消息中间件常见概念和编程模型
 
 - 常见概念
   - JMS提供者：连接面向消息中间件的，JMS接口的一个实现，RocketMQ,ActiveMQ,Kafka等等
@@ -57,9 +53,7 @@
 
  
 
-### 3. 主流消息队列和技术选型讲解
-
-**简介：对比当下主流的消息队列和选择问题**
+### 3. 主流消息队列和技术选型
 
 - Apache ActiveMQ、Kafka、RabbitMQ、RocketMQ
 
@@ -86,8 +80,6 @@
     - 阿里开源的一款的消息中间件, 纯Java开发，具有高吞吐量、高可用性、适合大规模分布式系统应用的特点, 性能强劲(零拷贝技术)，支持海量堆积, 支持指定次数和时间间隔的失败消息重发,支持consumer端tag过滤、延迟消息等，在阿里内部进行大规模使用，适合在电商，互联网金融等领域使用
 
    
-
- 
 
  
 
@@ -147,7 +139,9 @@
 
   - commit log: 消息存储会写在Commit log文件里面
 
-- 走读官网地址，学会如何学习新技术 http://rocketmq.apache.org/
+- 官网
+
+   http://rocketmq.apache.org/
 
 - 学习资源
 
@@ -160,354 +154,198 @@
 
  
 
-### 2. RocketMQ4.x本地源码部署(苹果系统底层是Unix系统)
+### 2. 安装与启动
 
-**简介:RocketMQ4.x本地快速部署**
+参考：[官网quick-start]( https://rocketmq.apache.org/docs/quick-start/ )
 
-- 安装前提条件(推荐) 64bit OS, Linux/Unix/Mac (Windows不兼容) 64bit JDK 1.8+;
 
-- 快速开始 http://rocketmq.apache.org/docs/quick-start/ 下载安装包：http://mirror.bit.edu.cn/apache/rocketmq/4.4.0/rocketmq-all-4.4.0-source-release.zip
 
-  ```
-  unzip rocketmq-all-4.4.0-source-release.zip
-  ```
+------
 
-  ```
-  cd rocketmq-all-4.4.0/
-  ```
 
-  ```
-  mvn -Prelease-all -DskipTests clean install -U
-  ```
 
-  ```
-  cd distribution/target/apache-rocketmq
-  ```
+**安装必备**：
 
-  ```
-  最终路径 rocketmq-all-4.4.0/distribution/target/apache-rocketmq
-  ```
+1. 64bit OS, Linux/Unix/Mac is recommended;
+2. 64bit JDK 1.8+;
+3. Maven 3.2.x;
+4. Git;
+5. 4g+ free disk for Broker server
 
-   
 
-- 最新版本部署存在问题：
 
-  - Please set the JAVA_HOME variable in your environment, We need java(x64)
+对应的这些在linux上安装参考 [linux基本环境安装]( [https://github.com/zrinGithub/Document/blob/master/linux/linux%E5%9F%BA%E6%9C%AC%E7%8E%AF%E5%A2%83%E5%AE%89%E8%A3%85.md](https://github.com/zrinGithub/Document/blob/master/linux/linux基本环境安装.md) )
 
-  - 解决：本地需要配置 JAVA_HOME 使用命令 vim ~/.bash_profile
 
-    - ```
-      JAVA_HOME="/Library/Java/JavaVirtualMachines/jdk1.8.0_171.jdk/Contents/Home"
-      ```
 
-      ```
-      export JAVA_HOME
-      ```
+------
 
-      ```
-      CLASS_PATH="$JAVA_HOME/lib"
-      ```
 
-      ```
-      PATH=".$PATH:$JAVA_HOME/bin"
-      ```
 
-- 解压压缩包
+**安装**:
 
-  - 启动nameServer
+点击quick-start页面的下载地址，下载源码包或者二进制包。
 
-    ```
-     nohup sh bin/mqnamesrv &
-    ```
-
-  - 查看日志 tail -f nohup.out (结尾：The Name Server boot success. serializeType=JSON 表示启动成功)
-
-  - 启动broker (-n指定nameserver地址，nameserver服务端口为9876, broker默认端口 10911)
-
-    ```
-    nohup sh bin/mqbroker -n localhost:9876 &
-    ```
-
-  - 关闭nameserver broker执行的命令
-
-    ```
-    sh bin/mqshutdown broker
-    ```
-
-    ```
-    sh bin/mqshutdown namesrv
-    ```
-
-  - 使用 jps查看进程
-
-   
-
+```shell
+#解压,没有指定命令安装：yum -y install unzip
+unzip rocketmq-all-4.7.0-source-release.zip -d /usr/local/rocketmq
  
+#安装依赖
+cd /usr/local/rocketmq/rocketmq-all-4.7.0-source-release/
 
-- 验证是否成功
+mvn -Prelease-all -DskipTests clean install -U
 
-  ```
-  #设置名称服务地址
-  ```
-
-  ```
-  export NAMESRV_ADDR=localhost:9876
-  ```
-
-  ```
-  #投递消息
-  ```
-
-  ```
-  sh bin/tools.sh org.apache.rocketmq.example.quickstart.Producer
-  ```
-
-  ```
-  
-  ```
-
-  ```
-  SendResult [sendStatus=SEND_OK, msgId= ...
-  ```
-
-  ```
-  
-  ```
-
-  ```
-  #消费消息
-  ```
-
-  ```
-  sh bin/tools.sh org.apache.rocketmq.example.quickstart.Consumer
-  ```
-
-  ```
-  
-  ```
-
-  ```
-  ConsumeMessageThread_%d Receive New Messages: [MessageExt...
-  ```
-
-   
-
- 
-
- 
-
-### 第3集 源码安装RocketMQ4.x可视化控制台
-
-**简介：源码安装RocketMQ4.x可视化控制台**
-
-- 下载 https://github.com/apache/rocketmq-externals
-
-- 编译打包 mvn clean package -Dmaven.test.skip=true
-
-  - 存在问题，因为roccketmq-console 里面 pom.xml 版本问题
-
-  ```
-  [ERROR] Failed to execute goal on project rocketmq-console-ng: Could not resolve dependencies for project org.apache:rocketmq-console-ng:jar:1.0.0: The following artifacts could not be resolved: org.apache.rocketmq:rocketmq-tools:jar:4.4.0-SNAPSHOT, org.apache.rocketmq:rocketmq-namesrv:jar:4.4.0-SNAPSHOT, org.apache.rocketmq:rocketmq-broker:jar:4.4.0-SNAPSHOT: Could not find artifact org.apache.rocketmq:rocketmq-tools:jar:4.4.0-SNAPSHOT -> [Help 1]
-  ```
-
-  ```
-  [ERROR]
-  ```
-
-  ```
-  [ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
-  ```
-
-  ```
-  [ERROR] Re-run Maven using the -X switch to enable full debug logging.
-  ```
-
-  - 解决 <rocketmq.version>4.4.0-SNAPSHOT</rocketmq.version>
-
-    改为 <rocketmq.version>4.4.0</rocketmq.version>
-
-- target目录 通过java -jar的方式运行, 启动后是 8080端口
-
-  其他常见问题：
-
-  ```
-  1）无法连接获取broker信息
-  ```
-
-  ```
-      修改配置文件,名称路由地址为 namesrvAddr，例如我本机地址为
-  ```
-
-  ```
-      src/main/resources/application.properties
-  ```
-
-  ```
-      rocketmq.config.namesrvAddr=127.0.0.1:9876
-  ```
-
-  ```
-  2）连接不成功
-  ```
-
-  ```
-      在阿里云，腾讯云或者虚拟机，记得检查端口号和防火墙是否启动
-  ```
-
-  ```
-      阿里云控制台有安全组，需要开放对应的端口
-  ```
-
- 
-
- 
-
- 
-
- 
-
-### 第4集 RocketMQ4.x可视化控制台讲解
-
-**简介：讲解新版的RocketMQ可视化管理后台**
-
-- 管理控制台地址 127.0.0.1:8080
-
+#实际位置
+cd distribution/target/rocketmq-4.7.0/rocketmq-4.7.0
 ```
-测试中遇到的问题
-maybe your broker machine memory too small
-原因：磁盘空间不够
+
+
+
+------
+
+
+
+**启动Name Server（名称路由）：**
+
+```shell
+#启动
+nohup sh bin/mqnamesrv &
+
+#查看日志
+tail -f ~/logs/rocketmqlogs/namesrv.log
+#或者
+tail -f nohup.out
+
+#进程
+jps
+9450 NamesrvStartup
+```
+
+
+
+**启动Broker:**
+
+```shell
+#启动
+#-n指定nameserver地址，nameserver服务端口为9876, broker默认端口 10911
+nohup sh bin/mqbroker -n localhost:9876 &
+
+#查看日志
+tail -f ~/logs/rocketmqlogs/broker.log
+#或者
+tail -f nohup.out
+```
+
+
+
+解决内存不足的问题：
+
+执行`sh bin/mqbroker -n localhost:9876`报错：
+
+```shell
+# There is insufficient memory for the Java Runtime Environment to continue.
+# Native memory allocation (mmap) failed to map 8589934592 bytes for committing reserved memory.
+```
+
+
+
+`free -h`查看剩余内存
+
+
+
+查看bin/mqbroker，里面调用${ROCKETMQ_HOME}/bin/runbroker.sh来执行。
+
+```shell
+#JAVA_OPT="${JAVA_OPT} -server -Xms8g -Xmx8g -Xmn4g"
+#改为
+JAVA_OPT=”${JAVA_OPT} -server -Xms256m -Xmx256m -Xmn125m -XX:MetaspaceSize=128m -XX:MaxMetaspaceSize=320m”
+```
+
+
+
+再次调用：
+
+```shell
+nohup sh bin/mqbroker -n localhost:9876 &
+
+jps
+9450 NamesrvStartup
+9483 BrokerStartup
+```
+
+
+
+
+
+**发送接收消息测试：**
+
+```shell
+#设置环境变量，nameservice的请求地址
+export NAMESRV_ADDR=localhost:9876
+
+#生产者
+sh bin/tools.sh org.apache.rocketmq.example.quickstart.Producer
+
+#消费者
+sh bin/tools.sh org.apache.rocketmq.example.quickstart.Consumer
+```
+
+
+
+**关闭服务:**
+
+先关闭broker，因其依赖于nameserver的路由功能。
+
+```shell
+sh bin/mqshutdown broker
+sh bin/mqshutdown namesrv 
 ```
 
  
 
- 
+### 3. 可视化安装
 
- 
+项目地址： https://github.com/apache/rocketmq-externals
 
-### 第5集 阿里云Linux服务器介绍和使用讲解
+```shell
+#1.下载
+git clone https://github.com/apache/rocketmq-externals.git
 
-**简介：阿里云服务器介绍和使用讲解**
+#2.使用的项目为rocketmq-console
+cd rocketmq-console
 
- 
+#2.修改pom.xml中版本问题（现在的版本已经正确了）
+vim pom.xml
 
- 
+#<rocketmq.version>4.4.0-SNAPSHOT</rocketmq.version>
+#修改为
+<rocketmq.version>4.4.0</rocketmq.version>
 
- 
+#3.修改连接参数
+vim src/main/resources/application.properties
+rocketmq.config.namesrvAddr=127.0.0.1:9876
 
-### 第6集 阿里云Linux服务器部署JDK8实战
+#4.编译打包
+mvn clean package -Dmaven.test.skip=true
 
-**简介：在阿里云服务器上安装JDK8和配置环境变量**
+#5.默认运行端口8080
+nohup java -jar rocketmq-console-ng-1.0.1.jar --server.port=XXXX &
 
-- 地址：https://www.oracle.com/technetwork/java/javase/downloads/jdk8-downloads-2133151.html
-
-- linux下使用wget下载jdk8:
-
-  进到目录/usr/local/software 配置环境变量
-
-  ```
-  解压：tar -zxvf jdk-8u201-linux-x64.tar.gz
-  重命名：mv jdk1.8.0_201 jdk8
-  vim /etc/profile
-  加入
-  export JAVA_HOME=/usr/local/software/jdk8
-  export PATH=$JAVA_HOME/bin:$PATH
-  export CLASSPATH=.:$JAVA_HOME/lib/dt.jar:$JAVA_HOME/lib/tools.jar
-  export JAVA_HOME PATH CLASSPATH
-  使用 source /etc/profile   让配置立刻生效
-  ```
-
-- windows 命令行工具 ：putty
-- windows 远程上传工具: wscp
-- Mac 命令行工具: Item2
-- Mac 远程上传工具 ： Filezilla
-
- 
-
- 
-
- 
-
- 
-
-### 第7集阿里云Linux服务器安装Maven实战
-
-**简介: Linux服务器下安装Maven**
-
-```
-解压：tar -zxvf apache-maven-3.6.0-bin.tar.gz
-重命名： mv apache-maven-3.6.0 maven
-vim /etc/profile
-export PATH=/usr/local/software/maven/bin:$PATH
-
-立刻生效：source /etc/profile
+#访问
+ip:8080
 ```
 
  
 
- 
+> TPS (Transaction per second,TPS) ： 每秒事务处理量 
 
  
 
  
 
-### 第8集 阿里云服务器源码部署RocketMQ4.X（Linux系统）
+### 4. 源码
 
-**简介：官方下载最新源码包，阿里云Linux服务器部署，解决内存不够问题**
-
-- 文档地址：http://rocketmq.apache.org/docs/quick-start/
-
-- Liunx 解压安装 yum install unzip
-
-- 常见问题
-
-  - NameServer内存不够怎么处理
-
-    - 找到 runserver.sh 修改 JAVA_OPT
-
-      ```
-      报错问题如下
-      [root@iZwz94sw188z3yfl7lpmmsZ apache-rocketmq]# sh bin/mqnamesrv
-      Java HotSpot(TM) 64-Bit Server VM warning: Using the DefNew young collector with the CMS collector is deprecated and will likely be removed in a future release
-      Java HotSpot(TM) 64-Bit Server VM warning: UseCMSCompactAtFullCollection is deprecated and will likely be removed in a future release.
-      Java HotSpot(TM) 64-Bit Server VM warning: INFO: os::commit_memory(0x00000006ec800000, 2147483648, 0) failed; error='Cannot allocate memory' (errno=12)
-      #
-      # There is insufficient memory for the Java Runtime Environment to continue.
-      # Native memory allocation (mmap) failed to map 2147483648 bytes for committing reserved memory.
-      # An error report file with more information is saved as:
-      # /usr/local/software/rocketmq-all-4.4.0/distribution/target/apache-rocketmq/hs_err_pid8993.log
-      
-      解决如下 编辑 bin/runserver.sh：
-      JAVA_OPT="${JAVA_OPT} -server -Xms256m -Xmx256m -Xmn256m -XX:MetaspaceSize=128m -XX:MaxMetaspaceSize=320m"
-      ```
-
-  - Broker内存不足
-
-    - 找到 runbroker.sh 修改 JAVA_OPT
-
-    - ```
-      JAVA_OPT="${JAVA_OPT} -server -Xms528m -Xmx528m -Xmn256m"
-      ```
-
-       
-
- 
-
- 
-
-### 第9集 阿里云源码安装RocketMQ4.X控制台（Linux系统）
-
-**简介：阿里云服务器安装RocketMQ控制台**
-
-- 上传源码包-》解压-》进入rocketmq-console目录-》 编译打包 mvn clean package -Dmaven.test.skip=true
-
-  **务必修改下面两个，再进行编译打包**
-
-  - 修改 pom.xml 版本号 (官方bug)
-  - 修改application.xml里面的nameserver地址
-
-- 进入target目录 ，启动 java -jar rocketmq-console-ng-1.0.0.jar
-
-- 守护进程方式启动 nohup java -jar rocketmq-console-ng-1.0.0.jar &
+github地址： https://github.com/apache/rocketmq
 
  
 
@@ -515,39 +353,19 @@ export PATH=/usr/local/software/maven/bin:$PATH
 
  
 
- 
+## 三. Springboot2.X整合
 
-### 第10集 RocketMQ4.4.X源码导入IDEA
 
-**简介：将RocketMQ源码导入IDEA,为后续阅读源码做准备**
 
-- 下载源码，解压，导入即可
+### 1. 发送消息
 
- 
+- pom.xml引入rocketmq
 
- 
-
- 
-
-## 第四章 Springboot2.X整合RocketMQ4.X实战
-
- 
-
-### 第1集 Springboot2.x整合RocketMQ4.x实战发送消息
-
-**简介：Springboot2.x整合RocketMQ4.x实战，加入相关依赖，开发生产者代码**
-
-**注意 ：记得启动nameser和broker**
-
-- 快速创建springboot项目 https://start.spring.io/
-
-- 加入相关依赖
-
-  ```
+  ```xml
   <dependency>
-  		<groupId>org.apache.rocketmq</groupId>
-  		<artifactId>rocketmq-client</artifactId>
-  		<version>4.3.0</version>
+  	<groupId>org.apache.rocketmq</groupId>
+  	<artifactId>rocketmq-client</artifactId>
+  	<version>4.3.0</version>
   </dependency>
   ```
 
@@ -559,6 +377,8 @@ export PATH=/usr/local/software/maven/bin:$PATH
   - tag: 标签，用于过滤
   - key: 消息唯一标示，可以是业务字段组合
   - body: 消息体,字节数组
+
+  
 
 - **注意 发送消息到Broker，需要判断是否有此topic启动broker的时候，**
 
@@ -625,7 +445,7 @@ https://blog.csdn.net/wangmx1993328/article/details/81588217
 
  
 
-### 第2集 Springboot2整合RocketMQ4.x实战消费消息
+### 2. 消费
 
 **简介：Springboot2.x整合RocketMQ4.x实战，开发消费者代码，常见问题处理**
 
