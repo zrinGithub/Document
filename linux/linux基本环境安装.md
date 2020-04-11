@@ -29,6 +29,8 @@ java -version
 
 - 使用安装包
 
+地址：https://www.oracle.com/technetwork/java/javase/downloads/jdk8-downloads-2133151.html
+
 ```shell
 #下载官网包，或者直接上传服务器
 wget download_url
