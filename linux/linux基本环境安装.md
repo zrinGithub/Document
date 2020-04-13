@@ -120,3 +120,59 @@ source /etc/profile
 git --version
 ```
 
+
+
+## SSH
+
+测试的机器为三台：
+
+server-1
+
+server-2
+
+server-3
+
+
+
+使用免密登录就要把主要操作机器的公钥放在其他机器里面
+
+
+
+```shell
+#1.安装ssh
+#一般环境都已经安装了
+#使用 yum list installed|grep openssh查看
+yum install openssh-server -y
+
+#2.在三台机器上分别生成密钥
+#产生密钥，-t指定密钥类型
+ssh-keygen -t rsa
+#使用默认地址，直接回车，后面的选择也是直接回城
+Enter file in which to save the key (/root/.ssh/id_rsa): 
+
+#完成后在~/.ssh/id_rsa下生成id_rsa、id_rsa.pub
+#依次为私钥、公钥
+
+#3.授权
+#3.1在server-1操作
+#公钥保存为authorized_keys
+cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
+
+#把key文件复制到server-2，需要输入密码
+scp ~/.ssh/authorized_keys root@server-2:~/.ssh/
+
+#此时server-1可以免密登录server-2
+
+#3.2在server-2操作
+#追加本机公钥
+cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
+#把key文件复制到server-3机器，需要输入密码
+scp ~/.ssh/authorized_keys root@server-3:~/.ssh/
+
+#3.3在server-2操作
+#追加本机公钥
+cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
+
+#至此可以用server-1免密登录所有机器
+```
+
