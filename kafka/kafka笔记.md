@@ -1,6 +1,6 @@
 # Kafka笔记
 
-笔记参考《Kafka入门与实践》（牟大恩著）
+此文档为[《Kafka入门与实践（异步图书）》]( https://www.amazon.cn/dp/B077QDBHDL )笔记
 
 
 
@@ -383,5 +383,70 @@ echo "INFO:Kafka cluster shut down successfully!"
 
 
 
-### 4. 主题管理
+### 4. 其余的东西
+
+剩下的在书里面有讲到的包括：主题管理、生产者消费者管理等，后面用到了再加到笔记里面。
+
+
+
+
+
+## 五. 结合SpringBoot开发
+
+API相关资料可以查看官方文档： https://kafka.apache.org/21/documentation.html#api 
+
+
+
+### 1. 准备
+
+- 引入依赖到pom.xml
+
+```xml
+<dependency>
+	<groupId>org.springframework.kafka</groupId>
+    <artifactId>spring-kafka</artifactId>
+</dependency>
+```
+
+也可以在初始化springboot项目时添加`Spring for Apache Kafka`的`Messaging`标签
+
+- 创建主题
+
+一般来说，发送消息会自动创建topic， 因为包含默认配置：`auto.create.topics.enable=true`
+
+这里我们手动创建：
+
+```shell
+kafka-topics.sh --zookeeper server-1:2181 server-2:2181 server-3:2181 --create --topic test-info --partitions 3 --replication-factor 2
+
+#通过zk查看
+ls /brokers/topics
+[test-info]
+```
+
+
+
+### 2. 消息
+
+```java
+@Data
+public class TestInfo {
+    private String code;
+    private String name;
+    private String address;
+    private String desc;
+}
+```
+
+
+
+
+
+### 2. 生产者
+
+
+
+
+
+
 
