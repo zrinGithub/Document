@@ -665,6 +665,8 @@ jmap -histo pid|more
 
 ### 4.  jhat
 
+比较老，jdk13里面没有了
+
 - 实战OOM场景dump下内存快照
 
 ```shell
@@ -672,6 +674,34 @@ jmap -histo pid|more
 -Xmx20M 运行期间最大内存
 -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp
 ```
+
+实验代码：
+
+```java
+public class OOMErrorTest {
+    //VM options:
+    //-Xms20M -Xmx20M -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=C:\zr\tmp
+    public static void main(String[] args) {
+        String name = "test";
+        for (int i = 0; i < 1000000000; i++) {
+            name += name;
+        }
+        System.out.println(name);
+    }
+}
+```
+
+
+
+生成java_pid10316.hprof文件。
+
+使用jhat分析：
+
+```shell
+jaht java_pid10316.hprof
+```
+
+
 
 
 
@@ -688,10 +718,7 @@ jmap -histo pid|more
 
 
 
-### 第5集 实战应用之使用虚拟机工具jstack
-
-**简介：堆内存分配方式，分配规则讲解
- **
+### 5. jstack
 
 - Jstack是什么？
 
@@ -700,30 +727,58 @@ jmap -histo pid|more
   * 线程快照就是当前虚拟机内每一条线程正在执行的方法堆栈的集合，生成线程快照的主要目的是定位线程出现长时间停顿的原因，如线程间死锁、死循环、请求外部资源导致的长时间等待等都是导致线程长时间停顿的常见原因。线程出现停顿的时候通过 jstack 来查看各个线程的调用堆栈，就可以知道没有响应的线程到底在后台做些什么事情，或者等待着什么资源
 
 * Jstack怎么做
-  * 常用命令jstack -l 3500
+  * 常用命令`jstack -l 3500`
   * jstack -F 当正常输出的请求不被响应时，强制输出线程堆栈 Force
-  * 经典面试题之 【jstack怎么进行死锁问题定位？】
+  * jstack怎么进行死锁问题定位？
 
 * 线上程序一般不能kill进程pid的方式直接关闭
-  * shutdownHook :在关闭之前执行的任务
+  * 一般程序包含shutdownHook :在关闭之前执行的任务
 
   
 
 
 
-
-
-
-
-### 第6集 经典面试题之死锁
-
-**简介：线程死锁是什么？怎么模拟一个线程死锁？怎么用jstack定位到线程死锁
- **
+### 6. jstack定位死锁
 
 - 线程死锁是什么？
   * 线程死锁是指由于两个或者多个线程互相持有对方所需要的资源，导致这些线程处于等待状态，无法前往执行
 - 死锁的模拟过程，代码模拟死锁
 
+```java
+public class DeadLockDemo {
+    private static Object lock1 = new Object();
+    private static Object lock2 = new Object();
+
+    public static void main(String[] args) {
+        new Thread(() -> {
+            synchronized (lock1) {
+                System.out.println(Thread.currentThread().getName() + "拿到lock1");
+                try {
+                    Thread.sleep(1000);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+                synchronized (lock2) {
+                    System.out.println(Thread.currentThread().getName() + "拿到lock2");
+                }
+            }
+        },"A").start();
+        new Thread(() -> {
+            synchronized (lock2) {
+                System.out.println(Thread.currentThread().getName() + "拿到lock2");
+                try {
+                    Thread.sleep(1000);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+                synchronized (lock1) {
+                    System.out.println(Thread.currentThread().getName() + "拿到lock1");
+                }
+            }
+        },"B").start();
+    }
+}
+```
 
 
 
@@ -732,10 +787,10 @@ jmap -histo pid|more
 
 
 
-### 第7集 经典面试题之线程状态
 
-**简介：线程状态有哪些？他们之间是怎么切换的
- **
+### 7. 线程状态
+
+具体的看线程相关笔记吧，这里只做个备忘。
 
 - 线程状态分类
 
@@ -746,7 +801,6 @@ jmap -histo pid|more
   - TIMED_WAITING 一个正在限时等待另一个线程执行一个动作的线程处于这一状态
   - TERMINATED
 
-  
 
 * Blocked状态与Waiting状态的区别
 
@@ -758,25 +812,15 @@ jmap -histo pid|more
 
 
 
-**![å°Dè¯¾å ](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGoAAAAiCAMAAACA9LykAAAAY1BMVEUAAAAjJikjJiojJiokJigjJikkJigjJikjJikjJikjJikkJigjJiojJiokJigjJiomJiYmJibWABPWABMmJiYmJiYmJibWABN9Ex99Ex/WABMmJiYjJiqgoKB3d3dcXFxBQUEZhcyGAAAAG3RSTlMAQIC/MGAQz9+fj+8gr3BQv4C/gCCvUN+/gGCwJXa4AAACP0lEQVRIx72W2ZLbIBBFe2EVQrLHnslCZ/n/rwwoOCDH5CWyzxO2VJy63TQlGGAQFbwEhagpOseE8BpmzRL8Cq9h9iJOw2uYWYRneBb67LtTsYiEZwXDlE47s4g8x2VsVplXuJRLGbtzUXap4zOFYvr54x16rIiFo1lS4fu3sIuFzyjhe6qcocftYukJRrQn7c0Bp6a679bcfvHDLpMCEB/jVB8bWonB4EBlq8kDjCvYVF8vlwtpA4UoMauQGeU2kZYYfBhMb9oIV7gjq6YHqrdPb28sQUEGGUsq5/ymQvLi2MUwkX5Y6lRdCgpq6VT8SHUphYphLi8z9KnIol+w4HnUqpZLJ2/+UsWpqBQvVVVcjrYiFwE5RwSZWQHlJauyesA53bAA14RQ6VWxqKIIZD5/gYLnqkJEaxGxpRccj9UNDR+2XfBZFaFgRJUt1uAhw1T1N9Wy9KrAPFSppnJwPu2uQaqT0vWqqpToTaUAJsc82b6rQ0Jz4dJU9s8tSGavQkQKXAdiXmVhBuuriNgRjWL5pprQ9mPlunPKuykIWZ+Zg1ZuBea88oNUgwpalfpQ1G0/ja6lGYoKVJYbzHiLmRke4prLJFN3KKG6+xfhHygFGwYrQ9XUVB8O65nIIBxNf9zPJ9z+ka18/816Hw7vVMZLxsMBTOvwXPikAJ1kJjgEYuzr1/XKnRSLHPlthtZq08rXYSVz7BendmIJi+7aPJJ+ixCOZY3btuw3ScMjHI9ZvZUdzq8GngYiVTQeq/kFPvQz03kWbEEAAAAASUVORK5CYII=)   愿景："让编程不在难学，让技术与生活更加有趣"          		**
-
-------
-
-## 第8章   中高级工程师必备虚拟机图形化工具
+## 八.  虚拟机图形化工具
 
   
 
-### 第1集     可视化虚拟机工具Jconsole介绍
+### 1. Jconsole介绍
 
-**简介：jconsole是什么？怎么连接与使用介绍
- **
+- JConsole  (Java Monitoring and Management Console）是一种基于 JMX 的可视化监视、管理工具，它管理部分的功能是针对 JMXMBean 进行管理，由于 MBean 可以使用代码、中间件服务器的管理控制台或者所有符合 JMX 规范的软件进行访问。**jconsole集成了线程与内存的可视化展示。**
 
-- Jconsole是什么？
-
-  * JConsole  (Java Monitoring and Management Console）是一种基于 JMX 的可视化监视、管理工具，它管理部分的功能是针对 JMXMBean 进行管理，由于 MBean 可以使用代码、中间件服务器的管理控制台或者所有符合 JMX 规范的软件进行访问
-  * 特点：jconsole集成了线程与内存的可视化展示
-
-- Jconsole怎么连接使用？
+- Jconsole连接
 
   * 本地连接 
 
@@ -788,103 +832,61 @@ jmap -histo pid|more
 
     * scp将jar包进行远程复制
 
-       
-
       ```powershell
-      
-      sudo scp /Users/daniel/Desktop/jvm-demo-0.0.1-SNAPSHOT.jar daniel@172.16.244.151:/usr/local
-      
+sudo scp xxx.jar root@server-1:/usr/local
       ```
-
       
-
+      
+      
     * 将jar包启动
 
       ```shell
-      nohup java -Xms800m -Xmx800m -XX:PermSize=256m -XX:MaxPermSize=512m -XX:MaxNewSize=512m -Dcom.sun.management.jmxremote.port=9999 
-      -Djava.rmi.server.hostname=172.16.244.151 
-      -Dcom.sun.management.jmxremote.ssl=false 
-      -Dcom.sun.management.jmxremote.authenticate=false -jar /Users/daniel/Desktop/jvm-demo-0.0.1-SNAPSHOT.jar &
+  nohup java -Xms800m -Xmx800m -XX:PermSize=256m -XX:MaxPermSize=512m -XX:MaxNewSize=512m -Dcom.sun.management.jmxremote.port=9999 
+      -Djava.rmi.server.hostname=192.168.x.x 
+  -Dcom.sun.management.jmxremote.ssl=false 
+      -Dcom.sun.management.jmxremote.authenticate=false -jar jvm-demo-0.0.1-SNAPSHOT.jar &
       ```
-
-      http与https的区别：https=http+ssl
-
-
+    
+      `-Dcom.sun.management.jmxremote.port=9999`开启jmx端口
 
 
 
-  
+- 示例代码：
 
-### 第2集     可视化虚拟机工具Jconsole内存监控验证
+  - 查看随时间内存监控图像：
 
-**简介：怎么设计程序验证jconsole内存监控功能**
-
-- 设计jconsole内存监控功能需求分析
-  * 掌握需求分析能力的重要性
-  * 作为一个有追求的程序员我们应该怎么分析需求
-- 实战演练jconsole内存增长过程
-  - 编写jconsole内存分配代码
-  - 分析jconsole各个指标的增长情况
-
-
-
-
-
-
-
-
-
-
-
-  
-
-### 第3集     可视化虚拟机工具Jconsole线程验证
-
-**简介：怎么设计程序验证jconsole线程监控功能**
-
-- 设计jconsole线程监控功能需求分析
-
-- 实战演练jconsole线程状态过程
-
-  * 线程状态waiting、timeWaiting模拟
+  ```java
+  public class MemDemo {
+      public static void main(String[] args) throws Exception {
+          List<String> list = new ArrayList<>();
+          for (int i = 0; i < 10000000; i++) {
+              Thread.sleep(1000);
+              list.add(UUID.randomUUID().toString());
+          }
+      }
+  }
+  ```
 
   
 
 
 
+### 2. VisualVM
 
+- VisualVM是一个集成命令行JDK工具和轻量级分析功能的可视化工具：
 
-
-
-
-
-### 第4集     可视化虚拟机工具VisualVM
-
-**简介：VisualVM插件安装讲解以及基础线程功能/内存功能讲解**
-
-- VisualVM是什么？
-
-  * VisualVM是一个集成命令行JDK工具和轻量级分析功能的可视化工具
-
-- VisualVM怎么用？
+- VisualVM安装使用：
 
   * 在IDEA安装VisualVM插件，File-> Setting-> Plugins -> Browers Repositrories 搜索VisualVM Launcher安装并重启IDEA
 
   * 点击配置VisualVM executable执行路径
 
-       如： /Library/Java/JavaVirtualMachines/jdk1.8.0_121.jdk/Contents/Home/bin/jvisualvm
+       如：C:/Program Files/Java/jdk1.8.0_221/bin/jvisualvm.exe（jdk9开始没有了）
 
   * eclipse配置教程原理相同
 
     
 
-  
-
-
-
-### 第5集     可视化虚拟机工具VisualVM实战
-
-**简介：VisualVM实战**
 
 - VisualVM大对象模拟，HashMap和Integer大对象对应的在堆内存信息的展示
 
@@ -904,45 +906,9 @@ jmap -histo pid|more
 
 
 
-**![å°Dè¯¾å ](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGoAAAAiCAMAAACA9LykAAAAY1BMVEUAAAAjJikjJiojJiokJigjJikkJigjJikjJikjJikjJikkJigjJiojJiokJigjJiomJiYmJibWABPWABMmJiYmJiYmJibWABN9Ex99Ex/WABMmJiYjJiqgoKB3d3dcXFxBQUEZhcyGAAAAG3RSTlMAQIC/MGAQz9+fj+8gr3BQv4C/gCCvUN+/gGCwJXa4AAACP0lEQVRIx72W2ZLbIBBFe2EVQrLHnslCZ/n/rwwoOCDH5CWyzxO2VJy63TQlGGAQFbwEhagpOseE8BpmzRL8Cq9h9iJOw2uYWYRneBb67LtTsYiEZwXDlE47s4g8x2VsVplXuJRLGbtzUXap4zOFYvr54x16rIiFo1lS4fu3sIuFzyjhe6qcocftYukJRrQn7c0Bp6a679bcfvHDLpMCEB/jVB8bWonB4EBlq8kDjCvYVF8vlwtpA4UoMauQGeU2kZYYfBhMb9oIV7gjq6YHqrdPb28sQUEGGUsq5/ymQvLi2MUwkX5Y6lRdCgpq6VT8SHUphYphLi8z9KnIol+w4HnUqpZLJ2/+UsWpqBQvVVVcjrYiFwE5RwSZWQHlJauyesA53bAA14RQ6VWxqKIIZD5/gYLnqkJEaxGxpRccj9UNDR+2XfBZFaFgRJUt1uAhw1T1N9Wy9KrAPFSppnJwPu2uQaqT0vWqqpToTaUAJsc82b6rQ0Jz4dJU9s8tSGavQkQKXAdiXmVhBuuriNgRjWL5pprQ9mPlunPKuykIWZ+Zg1ZuBea88oNUgwpalfpQ1G0/ja6lGYoKVJYbzHiLmRke4prLJFN3KKG6+xfhHygFGwYrQ9XUVB8O65nIIBxNf9zPJ9z+ka18/816Hw7vVMZLxsMBTOvwXPikAJ1kJjgEYuzr1/XKnRSLHPlthtZq08rXYSVz7BendmIJi+7aPJJ+ixCOZY3btuw3ScMjHI9ZvZUdzq8GngYiVTQeq/kFPvQz03kWbEEAAAAASUVORK5CYII=)   愿景："让编程不在难学，让技术与生活更加有趣"          		**
+## 九. 其他
 
-------
-
-## 第9章   20W年薪面试必备实战篇
-
-
-
-### 第1集     教你如何剖析传统项目JVM问题
-
-
-
-**简介：20W年薪应该掌握哪些实战知识**
-
-* 关于JAVA项目分类
-  * 传统项目容易遇到哪些JVM问题
-  * 互联网项目容易遇到哪些JVM问题
-
-* 实战案例讲解，传统公司遇到的上传下载问题
-
-  * 项目介绍
-
-  * 项目特点分析
-
-  * 瓶颈分析
-
-    * 是否是单接口性能问题？
-
-        如果是的是，先考虑是否有sql慢查询，定位慢查询的方法一般是用explain查看sql的执行计划   
-
-         select  * from user u where u.id=1;  ==> explain select  * from user u where u.id=1;
-
-         扫描行数是特别占CPU的，举个例子一个sql的扫描行数达到100w
-
-      
-
-    
-
-### 第2集     FullGC与Minor的区别频繁FullGC问题分析
+### 1.     FullGC与Minor的区别频繁FullGC问题分析
 
 **简介：FullGC与MinorGC讲解**
 
