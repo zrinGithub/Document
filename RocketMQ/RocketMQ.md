@@ -357,6 +357,12 @@ github地址： https://github.com/apache/rocketmq
 
 
 
+参考代码： https://github.com/zrinGithub/rocketmq-demo 
+
+官网示例： http://rocketmq.apache.org/docs/simple-example/ 
+
+
+
 ### 1. 发送消息
 
 - pom.xml引入rocketmq
@@ -369,73 +375,105 @@ github地址： https://github.com/apache/rocketmq
   </dependency>
   ```
 
-   
+  
+
+- 代码查看官网或者上面的github，就是创建生产者，向固定主题发送消息，支持异步和one-way。
+
+
 
 - Message对象
 
   - topic: 主题名称
-  - tag: 标签，用于过滤
+  - tag: 标签，用于消费者过滤
   - key: 消息唯一标示，可以是业务字段组合
   - body: 消息体,字节数组
-
-  
-
-- **注意 发送消息到Broker，需要判断是否有此topic启动broker的时候，**
-
-  **本地环境建议开启自动创建topic，生产环境建议关闭自动化创建topic**
-
-  **建议先手工创建Topic，如果靠程序自动创建，然后再投递消息，会出现延迟情况**
-
 - 概念模型: 一个topic下面对应多个queue,可以在创建Topic时指定，如订单类topic
-
 - 通过可视化管理后台查看消息
 
  
 
-常见错误一
+**常见错误：**
 
-```
+- 连接超时
+
+```java
 org.apache.rocketmq.remoting.exception.RemotingTooMuchRequestException:
 sendDefaultImpl call timeout
-原因：阿里云存在多网卡，rocketmq都会根据当前网卡选择一个IP使用，当你的机器有多块网卡时，很有可能会有问题。比如，我遇到的问题是我机器上有两个IP，一个公网IP，一个私网IP, 因此需要配置broker.conf 指定当前的公网ip, 然后重新启动broker 
-新增配置：conf/broker.conf  (属性名称brokerIP1=broker所在的公网ip地址 )
-新增这个配置：brokerIP1=120.76.62.13  
-
-启动命令：nohup sh bin/mqbroker -n localhost:9876  -c ./conf/broker.conf &
 ```
 
-常见错误二
 
+
+原因：存在多网卡，rocketmq都会根据当前网卡选择一个IP使用，当你的机器有多块网卡时，很有可能会有问题。比如，我遇到的问题是我机器上有两个IP，一个公网IP，一个私网IP, 因此需要配置broker.conf 指定当前的公网ip, 然后重新启动broker 
+
+```shell
+#修改配置
+vim conf/broker.conf 
+
+brokerIP1=192.168.199.101
+
+#重新启动
+nohup sh bin/mqbroker -n localhost:9876  -c ./conf/broker.conf &
 ```
-MQClientException: No route info of this topic, TopicTest1
-原因：Broker 禁止自动创建 Topic，且用户没有通过手工方式创建 此Topic, 或者broker和Nameserver网络不通
-解决：
-通过 sh bin/mqbroker -m  查看配置
-autoCreateTopicEnable=true 则自动创建topic
 
-Centos7关闭防火墙  systemctl stop firewalld
+
+
+
+
+- 不能自动创建topic
+
+```java
+org.apache.rocketmq.client.exception.MQClientException: No route info of this topic, pay_test_topic2
 ```
 
- 
 
-常见错误三
 
+Broker 禁止自动创建 Topic，且用户没有通过手工方式创建 此Topic, 或者broker和Nameserver网络不通
+
+```shell
+#查看配置
+sh bin/mqbroker -m
+
+#编辑文件
+vim conf/broker.conf
+
+#设置为允许自动创建topic(默认为true)
+autoCreateTopicEnable=true
 ```
-控制台查看不了数据，提示连接 10909错误
+
+**本地环境建议开启自动创建topic，生产环境建议关闭自动化创建topic**
+
+如果配置完成后无效，检查版本，保证pom.xml中的客户端版本与服务器安装版本一直，这里把pom.xml中对应依赖改为：
+
+```xml
+<dependency>
+	<groupId>org.apache.rocketmq</groupId>
+	<artifactId>rocketmq-client</artifactId>
+	<version>4.7.0</version>
+</dependency>
+```
+
+
+
+如果是网络接口的问题：
+
+Centos7关闭防火墙  `systemctl stop firewalld`
+
+
+
+- 可视化界面10909错误
 
 原因：Rocket默认开启了VIP通道，VIP通道端口为10911-2=10909
 
 解决：阿里云安全组需要增加一个端口 10909
-```
+
+
 
 其他错误:
 
-```
-https://blog.csdn.net/qq_14853889/article/details/81053145
-https://blog.csdn.net/wangmx1993328/article/details/81588217#%E5%BC%82%E5%B8%B8%E8%AF%B4%E6%98%8E
-https://www.jianshu.com/p/bfd6d849f156
-https://blog.csdn.net/wangmx1993328/article/details/81588217
-```
+[connect to XXXX:10909 failed](https://blog.csdn.net/qq_14853889/article/details/81053145)
+[RocketMQ 常见异常处理](https://blog.csdn.net/wangmx1993328/article/details/81588217#%E5%BC%82%E5%B8%B8%E8%AF%B4%E6%98%8E)
+[RocketMQ部署时遇到的问题](https://www.jianshu.com/p/bfd6d849f156)
+[RocketMQ 常见异常处理](https://blog.csdn.net/wangmx1993328/article/details/81588217)
 
  
 
@@ -447,72 +485,17 @@ https://blog.csdn.net/wangmx1993328/article/details/81588217
 
 ### 2. 消费
 
-**简介：Springboot2.x整合RocketMQ4.x实战，开发消费者代码，常见问题处理**
-
-- 自动创建topic： autoCreateTopicEnable=true 无效原因：客户端版本要和服务端版本保持一致
-
 - 创建消费者
-
-  ```
-   consumer = new DefaultMQPushConsumer(consumerGroup);
-          consumer.setNamesrvAddr(nameServerAddr);
-          consumer.setConsumeFromWhere(ConsumeFromWhere.CONSUME_FROM_LAST_OFFSET);
-          consumer.subscribe(topic, "*");
-          consumer.registerMessageListener((MessageListenerConcurrently) (msgs, context) -> {
-              try {
-              Message msg = msgs.get(0);
-              System.out.printf("%s Receive New Messages: %s %n", Thread.currentThread().getName(), new String(msgs.get(0).getBody()));
-              String topic = msg.getTopic();
-              String body = new String(msg.getBody(), "utf-8");
-              String tags = msg.getTags();
-              String keys = msg.getKeys();
-              System.out.println("topic=" + topic + ", tags=" + tags + ", keys=" + keys + ", msg=" + body);
-              return ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
-              } catch (UnsupportedEncodingException e) {
-                  e.printStackTrace();
-                  return ConsumeConcurrentlyStatus.RECONSUME_LATER;
-              }
-          });
-  
-          consumer.start();
-  ```
-
-   
-
-- 常见问题
-
-  ```
-  1、Caused by: org.apache.rocketmq.remoting.exception.RemotingConnectException: connect to <172.17.42.1:10911> failed 
-  
-  2、com.alibaba.rocketmq.client.exception.MQClientException: Send [1] times, still failed, cost [1647]ms, Topic: TopicTest1, BrokersSent: [broker-a, null, null]
-  
-  3、org.apache.rocketmq.client.exception.MQClientException: Send [3] times, still failed, cost [497]ms, Topic: TopicTest, BrokersSent: [Book-Air.local, 	MacBook-Air.local, MacBook-Air.local]
-  解决：多网卡问题处理
-  	1、设置producer:  producer.setVipChannelEnabled(false);
-  	2、编辑ROCKETMQ 配置文件：broker.conf（下列ip为自己的ip）
-  		namesrvAddr = 192.168.0.101:9876
-  		brokerIP1 = 192.168.0.101
-  
-  4、DESC: service not available now, maybe disk full, CL:
-  	解决：修改启动脚本runbroker.sh，在里面增加一句话即可：		
-  	JAVA_OPT="${JAVA_OPT} -Drocketmq.broker.diskSpaceWarningLevelRatio=0.98"
-  	（磁盘保护的百分比设置成98%，只有磁盘空间使用率达到98%时才拒绝接收producer消息）
-  	
-  常见问题处理
-  	https://blog.csdn.net/sqzhao/article/details/54834761
-  	https://blog.csdn.net/mayifan0/article/details/67633729
-  	https://blog.csdn.net/a906423355/article/details/78192828
-  ```
-
- 
+- 订阅主题
+- 注册监听器，在监听器中处理消息
 
 
 
-## 第五章 高级篇幅之RocketMQ4.X集群架构讲解
 
-### 第1集 RocketMQ4.X集群模式架构分析
 
-**简介：讲解RocketMQ4.X多种集群模式讲解**
+## 四. 集群架构
+
+### 1. 分析
 
 1. 单节点 :
 
@@ -554,9 +537,7 @@ https://blog.csdn.net/wangmx1993328/article/details/81588217
 
  
 
-### 第2集 消息可靠性之同步、异步刷盘
-
-**简介：讲解什么是同步刷盘和异步刷盘，主从模式如何保障消息可靠性**
+### 2. 消息可靠性之同步、异步刷盘
 
 - 内存+磁盘
 - 什么是异步刷盘(数据可能丢失,性能高)：
@@ -567,7 +548,7 @@ https://blog.csdn.net/wangmx1993328/article/details/81588217
 
  
 
-### 第3集 消息可靠性之同步、异步复制
+### 3. 消息可靠性之同步、异步复制
 
 **简介：讲解消息的同步和异步复制**
 
@@ -584,9 +565,7 @@ https://blog.csdn.net/wangmx1993328/article/details/81588217
 
  
 
-### 第4集 RocketMQ4.X集群高可用之主从模式搭建上集
-
-**简介：使用RocketMQ4.X搭建主从节点上集**
+### 4. 高可用的主从模式搭建上集
 
  
 
@@ -605,11 +584,7 @@ server4 ssh root@192.168.159.132
 
  
 
- 
 
-### 第5集 RocketMQ4.X集群高可用之主从模式搭建下集
-
-**简介：使用RocketMQ4.X搭建主从节点下集**
 
  
 
