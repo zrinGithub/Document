@@ -908,103 +908,75 @@ sudo scp xxx.jar root@server-1:/usr/local
 
 ## 九. 其他
 
-### 1.     FullGC与Minor的区别频繁FullGC问题分析
+### 1. FullGC与Minor
 
 **简介：FullGC与MinorGC讲解**
 
-- Minor GC触发条件：当Eden区满时，触发Minor GC
+- Minor GC触发条件：
+  - 当Eden区满时，触发Minor GC
+  - 特点：持续时间短，性能高，不会给系统带来明显的停顿。
 - FullGC触发条件
-  * 调用 System.gc()
-    此方法的调用是建议 JVM 进行 Full GC，虽然只是建议而非一定，但很多情况下它会触发 Full GC。因此强烈建议能不使用此方法就不要使用，让虚拟机自己去管理它的内存。可通过 -XX:+ DisableExplicitGC 来禁止 RMI 调用 System.gc()
-  * 老年代空间不足
-    老年代空间不足的常见场景为前文所讲的大对象直接进入老年代、长期存活的对象进入老年代等，当执行 Full GC 后空间仍然不足，则抛出 Java.lang.OutOfMemoryError。为避免以上原因引起的 Full GC，调优时应尽量做到让对象在 Minor GC 阶段被回收、让对象在新生代多存活一段时间以及不要创建过大的对象及数组
+  - 调用 System.gc()： 此方法的调用是建议 JVM 进行 Full GC，虽然只是建议而非一定，但很多情况下它会触发 Full GC。因此强烈建议能不使用此方法就不要使用，让虚拟机自己去管理它的内存。可通过 `-XX:+ DisableExplicitGC` 来禁止 RMI 调用 System.gc()
+  - 老年代空间不足 老年代空间不足的常见场景为前文所讲的大对象直接进入老年代、长期存活的对象进入老年代等，当执行 Full GC 后空间仍然不足，则抛出 Java.lang.OutOfMemoryError。为避免以上原因引起的 Full GC，调优时应尽量做到让对象在 Minor GC 阶段被回收、让对象在新生代多存活一段时间以及不要创建过大的对象及数组
+  - 空间分配担保失败 使用复制算法的 Minor GC 需要老年代的内存空间作担保，如果出现了 HandlePromotionFailure 担保失败，则会触发 Full GC
 
-  * 空间分配担保失败
-    使用复制算法的 Minor GC 需要老年代的内存空间作担保，如果出现了 HandlePromotionFailure 担保失败，则会触发 Full GC
+ 
 
-- 此项目中出现频繁FullGC，也就是系统空间分配不足导致的系统堆内存强制回收
+ 
 
-- 问题解决方法分析
+### 2. 下载导致的频繁FullGC问题演练与解决
 
-  * 由于本机单服务内存过大导致，此场景下Full GC，而且需要回收的内存很大，持续时间过长
-  * 解决停顿时间过长问题，缩短GC时间
+出现频繁FullGC，也就是系统空间分配不足导致的系统堆内存强制回收
 
 
-
-
-
-
-
-
-### 第3集     下载导致的频繁FullGC问题演练与解决
-
-**简介：FullGC演练**
 
 - 下载问题是什么问题？
-  * 用户线程访问所导致的大对象问题
-- 怎么设计一个用户线程所导致的FullGC问题
+
+  - 用户线程访问所导致的大对象问题
+
+  ```java
+  @GetMapping("/test")
+  public void test() throws Exception{
+      byte[] test = new byte[1024*1024*100];
+      Thread.sleep(10000);
+  }
+  ```
+
+  
+
+  打印gc的VM配置：
+
+  ```
+   -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCTimeStamps
+  ```
+
+    
+
 - 解决这个问题的关键是什么?
-  * 32G内存-xmx30G，系统每次进行FullGC时长太长
-  * 可以减少-xmx大小成4G，从而缩短Full GC
-  * 最终解决方案：集群部署，第一个节点4G  第二个节点4G   第三个节点4G   用nginx配置转发  upstream 
 
-```powershell
-
- -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCTimeStamps
-
-```
+  - 使用32G内存-xmx30G，系统每次进行FullGC时长太长
+  - 可以减少-xmx大小成4G，从而缩短Full GC
+  - 最终解决方案：集群部署，第一个节点4G 第二个节点4G 第三个节点4G 用nginx配置转发 upstream
 
 
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-### 第4集     互联网项目常见的JVM问题剖析
-
-**简介：互联网项目常见JVM问题讲述**
+### 3. 互联网项目常见的JVM问题
 
 - 为什么访问量大就越容易出问题
-  * 判断一个用户是否在白名单    List.contain(用户) true，==》Set.contain(用户) 通过hash比较==》布隆过滤器 
-  * 结论==》用户量大和用户量小的项目遇到的问题和解决方案也就不一样
+  - 判断一个用户是否在白名单 List.contain(用户) ->true，==》Set.contain(用户) 通过hash比较==》布隆过滤器
+  - 结论==》用户量大和用户量小的项目遇到的问题和解决方案也就不一样
 - 案例1，关于死锁问题
-  * 解决方案==》jstack -m命令查看帮我们检测是否有死锁，或者jconsole、jvisualVM也能检查
-  * new Thread的时候最好带上名称
+  - 解决方案==》`jstack -m`命令查看帮我们检测是否有死锁，或者jconsole、jvisualVM也能检查
+  - new Thread的时候最好带上名称
 - 案例2，堆内存泄漏问题
-  * 现象：出现OOM或者Full GC，heap使用率明显上升，经常达到Xmx
-  * Full GC出现的正常频率是大概一天一到两次
-  * 解决方案==》jmap dump下内存/heap dump on OOM/heap dump on FullGC+jhat本地分析/mat（eclipse），或者jconsole、jvisualVM也能检查
+  - 现象：出现OOM或者Full GC，heap使用率明显上升，经常达到Xmx
+  - Full GC出现的正常频率是大概一天一到两次
+  - 解决方案==》jmap dump下内存/heap dump on OOM/heap dump on FullGC+jhat本地分析/mat（eclipse），或者jconsole、jvisualVM也能检查
+- 案例3，堆外内存泄漏
+  - 现象：heap使用率很低，但是出现了OOM或者Full GC
+  - 解决方案==》可以用btrace（visualVm插件）跟踪DirectByteBuffer的构造函数来定位
 
-* 案例3，堆外内存泄漏
-
-  * 现象：heap使用率很低，但是出现了OOM或者Full GC
-
-  * 解决方案==》可以用btrace跟踪DirectByteBuffer的构造函数来定位
-
-
-
-
-
-### 第5集     互联网20W年薪学习秘笈分享
-
-* 互联网学习秘笈
-* 掌握学习秘笈提高效率巩固知识
+ 
 
