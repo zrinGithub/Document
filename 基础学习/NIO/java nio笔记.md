@@ -66,7 +66,7 @@ Channel与Stream类似但具有以下的不同：
 public class ChannelDemo {
 
     public static void main(String[] args) {
-        try (RandomAccessFile accessFile = new RandomAccessFile("D:\\code\\util\\work-util\\src\\main\\resources\\test1.txt", "rw")) {
+        try (RandomAccessFile accessFile = new RandomAccessFile("test1.txt", "rw")) {
             //获取输入通道
             FileChannel inChannel = accessFile.getChannel();
             //开辟空间，参数：The new buffer's capacity, in bytes
@@ -217,17 +217,253 @@ capacity标识这当前内存的固定长(fixed size)，而position和limit 则�
 
    
 
-7. 通过mark()设定当前位置（`mark = position;`）可以使用reset()把`position=为mark`。
+7. **标记与复位**
+
+   通过mark()设定当前位置（`mark = position;`）可以使用reset()把`position=为mark`。
+   
+   
+   
+8. **比较**
+
+   `equals()`比较buffer剩余元素是否相同
+
+   `compareTo()`
 
    
 
+## 四. Scatter/Gather
+
+scatter,gather分别对应读写两个概念，scatter read从通道读取数据到多个buffer，gather write标识多个buffer写数据到channel。
 
 
 
 
 
+### scatter read
+
+   ![scatter](.\image\scatter.png)
 
 
 
+```java
+ByteBuffer header = ByteBuffer.allocate(128);
+ByteBuffer body   = ByteBuffer.allocate(1024);
 
+ByteBuffer[] bufferArray = { header, body };
+
+channel.read(bufferArray);
+```
+
+scatter会首先填充第一个buffer，再移动到下一个buffer。所以有定长的header的时候，可以使用scatter来操作。
+
+
+
+### gather write
+
+![gather](.\image\gather.png)
+
+```java
+ByteBuffer header = ByteBuffer.allocate(128);
+ByteBuffer body   = ByteBuffer.allocate(1024);
+
+//write data into buffers
+
+ByteBuffer[] bufferArray = { header, body };
+
+channel.write(bufferArray);
+```
+
+写入的时候如果header只有1byte数据，那么只有1byte的数据会真正写入，所以gather适用于不固定长度数据的写入。
+
+
+
+## 五. Channel 到 Channel 传输
+
+NIO里面你可以直接把数据从Channel转移到另一个Channel里面。
+
+
+
+`transferFrom()`：FileChannel--->目标FileChannel
+
+```java
+RandomAccessFile fromFile = new RandomAccessFile("fromFile.txt", "rw");
+FileChannel fromChannel = fromFile.getChannel();
+
+RandomAccessFile toFile = new RandomAccessFile("toFile.txt", "rw");
+FileChannel toChannel = toFile.getChannel();
+
+long position = 0;
+long count = fromChannel.size();
+
+toChannel.transferFrom(fromChannel, position, count);
+```
+
+SocketChannel只会存储准备就绪的数据。
+
+
+
+`transferTo()`只是调用方发生改变：
+
+```java
+RandomAccessFile fromFile = new RandomAccessFile("fromFile.txt", "rw");
+FileChannel	fromChannel = fromFile.getChannel();
+
+RandomAccessFile toFile = new RandomAccessFile("toFile.txt", "rw");
+FileChannel toChannel = toFile.getChannel();
+
+long position = 0;
+long count = fromChannel.size();
+
+fromChannel.transferTo(position, count, toChannel);
+```
+
+
+
+## 六. Selector
+
+Selector用于检验多个通道是否就绪。
+
+![overview-selectors](.\image\overview-selectors.png)
+
+
+
+### 使用场景
+
+selector用于使用单线程管理多个Channel。单线程减少了线程切换的消耗。
+
+
+
+然而在现在的操作系统，CPU一般是多核并且支持多任务操作，在这种情况下，不利用多线程反而会浪费CPU的性能。
+
+
+
+### 操作
+
+#### 1.创建Selector:
+
+`Selector selector = Selector.open();`
+
+
+
+#### 2. 注册Channel到Selector:
+
+Channel是非阻塞的，这里是使用的SelectableChannel的方法，Socket channel可以切换为非阻塞模式。
+
+```java
+channel.configureBlocking(false);
+//注册到
+SelectionKey key = channel.register(selector, SelectionKey.OP_READ);
+```
+
+SelectionKey一共有四种状态常量，在这里标识你关注的事件：
+
+- OP_CONNECT：channel与server连接成功->连接就绪。
+
+- OP_ACCEPT：channel接收请求连接
+
+- OP_READ：有数据可读
+
+- OP_WRITE：能够进行数据写入
+
+如果需要多个事件，使用
+
+`int interestSet = SelectionKey.OP_READ | SelectionKey.OP_WRITE;`
+
+  
+
+注册的返回值为SelectionKey，这个对象包含了一些属性：
+
+- The interest set
+- The ready set
+- The Channel
+- The Selector
+- An attached object (optional)
+
+
+
+下面分别介绍一下：
+
+##### The interest set
+
+我们关注的事件集合，可以通过与运算获取。
+
+```java
+int interestSet = selectionKey.interestOps();
+
+boolean isInterestedInAccept  = interestSet & SelectionKey.OP_ACCEPT;
+boolean isInterestedInConnect = interestSet & SelectionKey.OP_CONNECT;
+boolean isInterestedInRead    = interestSet & SelectionKey.OP_READ;
+boolean isInterestedInWrite   = interestSet & SelectionKey.OP_WRITE;  
+```
+
+
+
+##### The ready set
+
+在选择channel之后可以查看channel处于就绪的状态集合。
+
+```java
+int readySet = selectionKey.readyOps();
+//可以像interestSet那样通过与操作，也可以直接调用方法获取指定状态
+selectionKey.isAcceptable();
+selectionKey.isConnectable();
+selectionKey.isReadable();
+selectionKey.isWritable();
+```
+
+
+
+##### Channel Selector
+
+获取方式：
+
+```java
+Channel  channel  = selectionKey.channel();
+
+Selector selector = selectionKey.selector();    
+```
+
+
+
+##### Attaching Objects
+
+给SelectionKey附加一个Object，这样可以方便我们识别一个Channel，或者为Channel添加更多的信息。
+
+附加Object：
+
+```java
+selectionKey.attach(theObject);
+
+Object attachedObj = selectionKey.attachment();
+```
+
+
+
+或者直接在调用注册方法的时候附带：
+
+```java
+SelectionKey key = channel.register(selector, SelectionKey.OP_READ, theObject);
+```
+
+
+
+#### 3. 通过Selector选择Channel
+
+当注册了Channel之后到Selector之后，注册的时候设定了关注的事件（interest event:connect、accept、read、write）。
+
+这样当你通过select()方法选择的时候，选择的就是对应事件就绪(event ready)的Channel。
+
+
+
+几种选取方式：
+
+- `int select()`一直阻塞直到获取一个channel就绪关注事件。
+- `int select(long timeout)`同上，但是限制了阻塞时间。
+- `int selectNow()`不阻塞直接返回。
+
+返回值表示就绪的Channel数量
+
+
+
+#### 4. selectedKeys()
 
