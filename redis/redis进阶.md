@@ -337,3 +337,41 @@ try {
 
 
 
+## 二. redis集群安装
+
+redis安装参考redis入门文档。
+
+
+
+### 1. 创建集群文件夹
+
+```shell
+cd /usr/local/
+mkdir redis_cluster
+cd redis_cluster
+mkdir 7000 7001 7002 7003 7004 7005
+cp /usr/local/redis-4.0.6/redis.conf  /usr/local/redis_cluster/7000
+```
+
+
+
+### 2. 修改配置文件
+
+每个节点都需要修改
+
+```shell
+daemonize    yes               //redis后台运行
+port  7000                     //端口7000,7002,7003,7004,7005
+cluster-enabled  yes            //开启集群  把注释#去掉
+cluster-config-file  nodes.conf   //集群的配置,首次启动自动生成 
+cluster-node-timeout  5000     //请求超时  设置5秒够了
+appendonly  yes               //aof日志开启，它会操作日志
+bind 127.0.0.1 172.16.244.133(Redis安装的这台机的内网IP,命令：ip addr) //添加一个内网IP，这部不操作的话会导致内网其他节点无妨访问你的集群
+
+#配置到每一个节点
+cp /usr/local/redis_cluster/7000/redis.conf /usr/local/redis_cluster/7001
+```
+
+
+
+   
