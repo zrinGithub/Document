@@ -467,3 +467,83 @@ SelectionKey key = channel.register(selector, SelectionKey.OP_READ, theObject);
 
 #### 4. selectedKeys()
 
+使用`select()`获取了就绪的Channel之后，可以使用Selector的`selectedKeys()`通过一个选中的key值set来操作就绪的Channel。
+
+```java
+//获取就绪的SelectionKey列表
+Set<SelectionKey> selectedKeys = selector.selectedKeys();    
+Iterator<SelectionKey> keyIterator = selectedKeys.iterator();
+//可以通过遍历来获取指定事件就绪的Channel
+while(keyIterator.hasNext()) {
+    SelectionKey key = keyIterator.next();
+    if(key.isAcceptable()) {
+        // a connection was accepted by a ServerSocketChannel.
+    } else if (key.isConnectable()) {
+        // a connection was established with a remote server.
+    } else if (key.isReadable()) {
+        // a channel is ready for reading
+    } else if (key.isWritable()) {
+        // a channel is ready for writing
+    }
+    //处理完Channel之后，必须要做移除。在下一次该Channel就绪之后，Selector会自动把它加进来
+    keyIterator.remove();
+}
+```
+
+
+
+拿到指定的SelectionKey之后，可以通过`SelectionKey.channel()`并转为指定的Channel类型来进行操作。
+
+
+
+#### 5. 唤醒等待获取Channel的线程
+
+当线程调用`select()`方法开始阻塞之后，其他线程可以使用`Selector.wakeup()`方法来唤醒该线程，被唤醒的线程的`select()`直接返回。
+
+
+
+#### 6. 关闭Selector
+
+调用`close()`方法来关闭Selector，调用后Selector关闭，Selector上面注册的所有SelectionKey实例将会失效。
+
+而Channel本身不会被关闭。
+
+
+
+### 完整Selector操作示例
+
+```java
+//创建Selector
+Selector selector = Selector.open();
+//注册Channel到Selector
+channel.configureBlocking(false);
+SelectionKey key = channel.register(selector, SelectionKey.OP_READ);
+
+while(true) {
+	//立刻获取当前就绪的Channel
+  	int readyChannels = selector.selectNow();
+  	if(readyChannels == 0) continue;
+	//获取Channel
+  	Set<SelectionKey> selectedKeys = selector.selectedKeys();
+  	Iterator<SelectionKey> keyIterator = selectedKeys.iterator();
+  	while(keyIterator.hasNext()) {
+    	SelectionKey key = keyIterator.next();
+
+    	if(key.isAcceptable()) {
+        	// a connection was accepted by a ServerSocketChannel.
+    	} else if (key.isConnectable()) {
+       		// a connection was established with a remote server.
+    	} else if (key.isReadable()) {
+        	// a channel is ready for reading
+    	} else if (key.isWritable()) {
+        	// a channel is ready for writing
+    	}
+    	keyIterator.remove();
+  	}
+}
+```
+
+
+
+## 七. FileChannel
+
