@@ -762,7 +762,38 @@ while(!socketChannel.finishConnect() ){
 
 
 
-## 九.
+## 九. ServerSocketChannel
+
+ServerSocketChannel用于监听TCP连接请求。
+
+
+
+### 操作方式
+
+示例：
+
+```java
+ServerSocketChannel serverSocketChannel = ServerSocketChannel.open();
+serverSocketChannel.socket().bind(new InetSocketAddress(9999));
+
+while(true){
+    SocketChannel socketChannel =
+            serverSocketChannel.accept();
+    //do something with socketChannel...
+}
+```
+
+
+
+##### 打开ServerSocketChannel
+
+```java
+ServerSocketChannel serverSocketChannel = ServerSocketChannel.open();
+```
+
+
+
+
 
 
 
