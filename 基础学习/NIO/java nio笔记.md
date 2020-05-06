@@ -547,3 +547,255 @@ while(true) {
 
 ## 七. FileChannel
 
+有了FileChannel，你不必再使用标准的java IO API来与文件进行交互。
+
+
+
+### 操作
+
+#### 1.打开FileChannel
+
+通过InputStream，OutputStream或者RandomAccessFile获取Channel。
+
+```java
+//RandomAccessFile获取channel
+RandomAccessFile aFile = new RandomAccessFile("data/nio-data.txt", "rw");
+FileChannel inChannel = aFile.getChannel();
+
+//FileInputStream里面的getChannel()方法
+public FileChannel getChannel() {
+    ......
+}
+```
+
+
+
+#### 2.通过FileChannel读取数据
+
+```java
+ByteBuffer buf = ByteBuffer.allocate(48);
+//把数据通过Channel读取进buffer
+int bytesRead = inChannel.read(buf);
+```
+
+如果返回值bytesRead是-1，表示已经到达文件尾。
+
+
+
+#### 3.通过FileChannel写数据
+
+```java
+String newData = "New String to write to file..." + System.currentTimeMillis();
+//buffer填充数据
+ByteBuffer buf = ByteBuffer.allocate(48);
+buf.clear();
+buf.put(newData.getBytes());
+//buffer转为写模式
+buf.flip();
+//无法确定每次写入多少byte，所以使用循环读取
+while(buf.hasRemaining()) {
+	//把buffer中的数据写入channel中
+    channel.write(buf);
+}
+```
+
+
+
+#### 4.关闭FileChannel
+
+```java
+channel.close();    
+```
+
+
+
+#### 5.FileChannel 位置
+
+当你通过FileChannel在指定位置进行读写操作的时候，可以调用`position()`获取当前位置。
+
+```java
+public abstract long position() throws IOException;
+public abstract FileChannel position(long newPosition) throws IOException;
+```
+
+
+
+应用：
+
+```java
+//如果到文件尾了，返回-1
+long pos = channel.position();
+//如果不进行边界监测的话，文件会继续扩充读取磁盘的下一位置的物理文件
+channel.position(pos +123);
+```
+
+
+
+#### 6.FileChannel 大小
+
+```java
+long fileSize = channel.size();    
+```
+
+
+
+#### 7.FileChannel截取
+
+如果截取的size大于文件大小，则没有改变，如果小于则边界的数据被丢弃。
+
+```java
+//参数为byte
+channel.truncate(1024);
+```
+
+
+
+#### 8.FileChannel缓存强制写入
+
+使用`force()`将缓存中的数据强制写入磁盘。
+
+```java
+//参数为true表示文件的数据与元数据都要强制刷入
+channel.force(true);
+```
+
+
+
+## 八. SocketChannel
+
+SocketChannel是连接到TCP网络的通道。
+
+有两种创建SocketChannel的方式：
+
+- 调用SocketChannel的`open`方法，然后连接到网络上的服务器
+- 请求连接到SeverSocketChannel的时候，一个SocketChannel可以被创建
+
+
+
+### 操作方式
+
+#### 1.打开SocketChannel
+
+```java
+SocketChannel socketChannel = SocketChannel.open();
+socketChannel.connect(new InetSocketAddress("http://ip", 80));
+```
+
+
+
+#### 2.关闭SocketChannel
+
+```java
+socketChannel.close();   
+```
+
+
+
+#### 3.通过SocketChannel读取数据
+
+首先buffer开辟内存空间，之后SocketChannel接收到的数据传输到buffer中。
+
+```java
+ByteBuffer buf = ByteBuffer.allocate(48);
+//读取数据，如果返回-1则说明到达了数据流的结尾，也就是连接已经关闭。
+int bytesRead = socketChannel.read(buf);
+```
+
+
+
+#### 4.向SocketChannel写数据
+
+```java
+String newData = "New String to write to file..." + System.currentTimeMillis();
+//向buffer填充数据
+ByteBuffer buf = ByteBuffer.allocate(48);
+buf.clear();
+buf.put(newData.getBytes());
+//buffer切换为写模式，也就是position=0，limit=之前position的位置
+buf.flip();
+//向channel写数据，循环判断buffer中是否有数据残留
+while(buf.hasRemaining()) {
+    channel.write(buf);
+}
+```
+
+
+
+
+
+#### 5.非阻塞模式
+
+使用异步的方式调用`connect()`，`read()`，`write`这些方法。
+
+
+
+##### connect()
+
+```java
+//设置非阻塞方式
+socketChannel.configureBlocking(false);
+//创建连接，因为是异步执行的，所以可能会在创建连接之前方法就返回了
+socketChannel.connect(new InetSocketAddress("http://ip", 80));
+//在循环里面判断连接是否已经创建
+while(!socketChannel.finishConnect() ){
+    //wait, or do something else...    
+}
+```
+
+
+
+##### write()
+
+调用`write()`可能在真正写入数据之前方法就返回了，但是因为我们是放到循环里面的，所以操作没什么不同。
+
+
+
+##### read()
+
+调用`read()`可能在真正有数据读出之前方法就返回了，但是我们一般会放在循环里面，并把返回的`int`值作为判断的依据，所以也没有什么不同。
+
+
+
+##### 非阻塞模式下的Selector
+
+在非阻塞模式下，Selector可以与SocketChannel配合，通过向一个Selector注册多个SocketChannel达到了单线程操作多通道读写的能力。
+
+
+
+## 九. ServerSocketChannel
+
+ServerSocketChannel用于监听TCP连接请求。
+
+
+
+### 操作方式
+
+示例：
+
+```java
+ServerSocketChannel serverSocketChannel = ServerSocketChannel.open();
+serverSocketChannel.socket().bind(new InetSocketAddress(9999));
+
+while(true){
+    SocketChannel socketChannel =
+            serverSocketChannel.accept();
+    //do something with socketChannel...
+}
+```
+
+
+
+##### 打开ServerSocketChannel
+
+```java
+ServerSocketChannel serverSocketChannel = ServerSocketChannel.open();
+```
+
+
+
+
+
+
+
+
+
