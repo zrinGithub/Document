@@ -1,5 +1,13 @@
 # Java并发编程笔记
 
+该文档为《Java并发编程之美》的读书笔记
+
+
+
+[TOC]
+
+
+
 ## 一. 并发编程基础
 
 ### 进程与线程
@@ -301,12 +309,212 @@ JDK使用AtomicStampedReference来给每个变量配置一个时间戳用于区�
 几个关键的方法：
 
 ```java
-//指定变量在类中的内存偏移地址
+//指定变量在类中的内存偏移地址，因为取的是类中的相对位置，所以实际上是和类而非对象绑定的一项数据
 long objectFieldOffset(Field f);
 //数组第一个元素的地址
 int arrayBaseOffset(Class<?> arrayClass);
 //数组一个元素占用字节
 int arrayIndexScale(Class<?> arrayClass);
+//cas操作
+@HotSpotIntrinsicCandidate
+public final long getAndSetLong(Object o, long offset, long newValue) {
+    long v;
+    do {
+        v = getLongVolatile(o, offset);
+    } while (!weakCompareAndSetLong(o, offset, v, newValue));
+    return v;
+}
+//weakCompareAndSetLong里面调用compareAndSetLong
+native boolean compareAndSetLong(Object o, long offset,
+                                                  long expected,
+                                                  long x);
 
+
+//支持volatile版本的：设置对象o中偏移量为offset类型为long的field值为x
+public native void    putLongVolatile(Object o, long offset, long x);
+//对应的不支持volatile版本的方法
+public native void    putFloat(Object o, long offset, float x);
+
+/** Ordered/Lazy version of {@link #putLongVolatile(Object, long, long)} */
+@ForceInline
+public void putOrderedLong(Object o, long offset, long x) {
+	theInternalUnsafe.putLongRelease(o, offset, x);
+}
+
+/** Release version of {@link #putLongVolatile(Object, long, long)} */
+@HotSpotIntrinsicCandidate
+public final void putLongRelease(Object o, long offset, long x) {
+	putLongVolatile(o, offset, x);
+}
+
+/**
+ * Blocks current thread, returning when a balancing
+ * {@code unpark} occurs, or a balancing {@code unpark} has
+ * already occurred, or the thread is interrupted, or, if not
+ * absolute and time is not zero, the given time nanoseconds have
+ * elapsed, or if absolute, the given deadline in milliseconds
+ * since Epoch has passed, or spuriously (i.e., returning for no
+ * "reason"). Note: This operation is in the Unsafe class only
+ * because {@code unpark} is, so it would be strange to place it
+ * elsewhere.
+ */
+@HotSpotIntrinsicCandidate
+public native void park(boolean isAbsolute, long time);
+
+/**
+ * Unblocks the given thread blocked on {@code park}, or, if it is
+ * not blocked, causes the subsequent call to {@code park} not to
+ * block.  Note: this operation is "unsafe" solely because the
+ * caller must somehow ensure that the thread has not been
+ * destroyed. Nothing special is usually required to ensure this
+ * when called from Java (in which there will ordinarily be a live
+ * reference to the thread) but this is not nearly-automatically
+ * so when calling from native code.
+ *
+ * @param thread the thread to unpark.
+ */
+@HotSpotIntrinsicCandidate
+public native void unpark(Object thread);
 ```
+
+
+
+这里如果需要使用使用Unsafe类，需要使用反射的方法，因为在getUnsafe方法中，会判断是否是BootStrap类加载器：
+
+```java
+@CallerSensitive
+public static Unsafe getUnsafe() {
+	Class<?> caller = Reflection.getCallerClass();
+    if (!VM.isSystemDomainLoader(caller.getClassLoader()))
+    	throw new SecurityException("Unsafe");
+	return theUnsafe;
+}
+```
+
+
+
+下面是测试代码：
+
+```java
+public class TestUnSafe {
+    static Unsafe unSafe;
+
+    static Long stateOffset;
+
+    private volatile long state = 0;
+
+    static {
+        try {
+            final Field field = Unsafe.class.getDeclaredField("theUnsafe");
+            field.setAccessible(true);
+            //因为是静态变量，直接取就可以
+            unSafe = (Unsafe) field.get(null);
+            //获取state变量在类TestUnSafe中的偏移位置
+            stateOffset = unSafe.objectFieldOffset(TestUnSafe.class.getDeclaredField("state"));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void main(String[] args) {
+        TestUnSafe test = new TestUnSafe();
+        boolean result = unSafe.compareAndSwapLong(test, stateOffset, 0, 1);
+        System.out.println(result);
+    }
+}
+```
+
+
+
+### 指令重排（有序性）
+
+编译器和处理器会对没有数据依赖的指令进行重排序，在多线程的情况下，可能会出现：
+
+- 线程1进行a,b赋值操作
+- 线程2在a满足条件时打印b
+
+对a,b的赋值操作的顺序实际上会影响我们预期的效果。
+
+
+
+解决的办法：用锁可以把一系列操作作为事务处理。也可以使用volatile确保操作不会进行重排序。
+
+
+
+
+
+### 伪共享
+
+因为Cache是按行存储，可能出现一个缓存行包含多个变量，这样当一个线程操作某一个变量的时候，其他变量也受到了限制，会导致其他线程读取不到数据，直接访问一级缓存或者主内存。
+
+
+
+解决的办法就是创建变量后填充缓存行，这样一个缓存行就只有一个变量。
+
+可以看Thread类里面的应用：
+
+```java
+    /** The current seed for a ThreadLocalRandom */
+    @sun.misc.Contended("tlr")
+    long threadLocalRandomSeed;
+
+    /** Probe hash value; nonzero if threadLocalRandomSeed initialized */
+    @sun.misc.Contended("tlr")
+    int threadLocalRandomProbe;
+
+    /** Secondary seed isolated from public ThreadLocalRandom sequence */
+    @sun.misc.Contended("tlr")
+    int threadLocalRandomSecondarySeed;
+```
+
+
+
+
+
+### 锁的分类
+
+#### 乐观锁与悲观锁
+
+- 悲观锁：处理数据前进行加锁，操作完再解锁。比如数据库的事务就是如此。
+
+- 乐观锁：在写的时候通过比较版本信息（版本号、时间戳、原始数值）来进行CAS操作。
+
+
+
+#### 公平锁与非公平锁
+
+线程A持有数据锁的同时，B最先开始申请数据并阻塞，之后线程C也开始申请数据阻塞。
+
+在A释放锁之后：
+
+- 公平锁：线程B因为最先请求锁，所以获取
+- 非公平锁：线程B、C都可能获取锁
+
+
+
+#### 独占锁与共享锁
+
+- 独占锁：只有一个线程可以获取锁，比如ReentrantLock
+
+- 共享锁：多个线程持有，比如ReadWriteLock的读锁支持多个线程同时进行读取操作。（这实际是一种优化，因为读数据不会引起线程安全问题）
+
+
+
+### 可重入锁
+
+可重入锁会维护一个计数器以及线程标识（类似map<threadName,count>?），当获取锁会把对应的值加一，释放锁减一，只有计数到0才会完全释放这个锁。
+
+synchronized是一个可重入锁。
+
+
+
+### 自旋锁
+
+获取锁失败后，不是马上阻塞挂起，而是多次尝试获取，如果次数以达到预设，则阻塞。
+
+相当于通过消耗CPU时间来换取线程调度的开销。
+
+
+
+## 二. 并发包中的主要组件实现原理
 
