@@ -106,7 +106,7 @@ public void run(){
 
 
 
-#### 线程本地变量ThreadLocals与InheritableThreadLocal
+#### 线程本地变量ThreadLocal与InheritableThreadLocal
 
 创建了ThreadLocal变量后，每个线程都有改变量的一个副本，也就是每个线程操作该变量都是在操作自己本地内存的数据。
 
@@ -127,7 +127,9 @@ ThreadLocal没有继承性（因为主线程和子线程本变量存储的是自
 
 **实现原理：**
 
-Thread里面包含两个ThreadLocalMap的变量，结构类似定制化的HashMap：
+Thread里面包含两个ThreadLocalMap的变量，结构类似定制化的HashMap，
+
+这里为啥Thread维护的是一个map结构？实际上ThreadLocalMap的键类型为ThreadLocal，因为我们可能存在多个ThreadLocal值，所以使用Map。
 
 ```java
     /* ThreadLocal values pertaining to this thread. This map is maintained
@@ -147,7 +149,27 @@ ThreadLocal是一个工具类，包装了对threadLocals的操作。
 
 同理InheritableThreadLocal对于inheritableThreadLocals也是一样。
 
+举个例子：
 
+```java
+    public T get() {
+        Thread t = Thread.currentThread();
+        ThreadLocalMap map = getMap(t);
+        if (map != null) {
+            ThreadLocalMap.Entry e = map.getEntry(this);
+            if (e != null) {
+                @SuppressWarnings("unchecked")
+                T result = (T)e.value;
+                return result;
+            }
+        }
+        return setInitialValue();
+    }
+```
+
+这里先通过当前线程获取线程中的ThreadLocalMap变量
+
+之后使用当前ThreadLocal对象作为键查找对应的数据
 
 ------
 
