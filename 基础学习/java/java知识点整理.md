@@ -458,10 +458,6 @@ StringBuffer里面操作方法用**synchronized** ，效率相对更低,是线�
 
  
 
- 
-
-
-
 ##### Overload和Override的区别？
 
 重载**Overload**：表示同一个类中可以有多个名称相同的方法，但这些方法的参数列表各不相同，参数个数或类型不同
@@ -490,6 +486,185 @@ StringBuffer里面操作方法用**synchronized** ，效率相对更低,是线�
 
  
 
- 
+#### 7. List
+
+##### Vector和ArrayList、LinkedList说明
+
+答案：
+
+- 线程安全
+  - ArrayList：底层是`数组实现`，线程不安全，查询和修改非常快，但是增加和删除慢
+  - LinkedList: 底层是`双向链表`，线程不安全，查询和修改速度慢，但是增加和删除速度快
+  - Vector: 底层是`数组实现`，线程安全的，操作的时候使用`synchronized`进行加锁
+- 使用场景
+  - Vector已经很少用了
+  - 增加和删除场景多则用LinkedList
+  - 查询和修改多则用ArrayList
 
   
+
+##### ArrayList应该怎么做才能保证线程安全
+
+- 自己写个包装类，根据业务一般是对 add/update/remove加锁 
+
+- `Collections.synchronizedList(new ArrayList<>());` 使用synchronized加锁包装返回：
+
+```java
+    public static <T> List<T> synchronizedList(List<T> list) {
+        return (list instanceof RandomAccess ?
+                new SynchronizedRandomAccessList<>(list) :
+                new SynchronizedList<>(list));
+    }
+	//可以自己传入变量锁
+    static <T> List<T> synchronizedList(List<T> list, Object mutex) {
+        return (list instanceof RandomAccess ?
+                new SynchronizedRandomAccessList<>(list, mutex) :
+                new SynchronizedList<>(list, mutex));
+    }
+```
+
+
+
+- `CopyOnWriteArrayList`（顾名思义写时复制，在修改、删除和新增的时候复制并对写操作加锁，因为先复制再操作，所以操作的是副本的内容能够保证一致性） 使用`ReentrantLock`加锁
+
+ ```java
+public CopyOnWriteArrayList(Collection<? extends E> c);
+ ```
+
+
+
+##### CopyOnWriteArrayList知识点
+
+了解`CopyOnWriteArrayList`吗？和 `Collections.synchronizedList`实现线程安全有什么区别, 使用场景是怎样的？
+
+- `CopyOnWriteArrayList`：修改会拷贝新的数组操作（add、set、remove等)，修改后指向新的集合，使用`ReentrantLock`保证不会有多个线程同时拷贝一份数组。
+
+  - 场景：适用**读多写少**场景(读不加锁的，删除、增加、修改是需要加锁的,)
+
+  
+
+- 对比`Collections.synchronizedList`：每个方法中都使用了`synchronized`同步锁
+
+  - 场景：写操作性能比`CopyOnWriteArrayList`好，读操作性能并不如`CopyOnWriteArrayList`
+
+ 
+
+- `CopyOnWriteArrayList`的设计思想是怎样的,有什么缺点？
+
+  设计思想：**读写分离**+**最终一致**
+
+  缺点：内存占用问题，写时复制机制，内存里会同时驻扎两个对象的内存。如果旧的对象和新写入的对象大，则容易发生Yong GC和Full GC
+
+
+
+##### ArrayList扩容机制
+
+JDK1.7之前ArrayList默认大小是10，JDk1.7之后是0。若已经指定大小则集合大小为指定的。
+
+```java
+//jdk8源码
+private static final Object[] DEFAULTCAPACITY_EMPTY_ELEMENTDATA = {};
+public ArrayList() {
+	this.elementData = DEFAULTCAPACITY_EMPTY_ELEMENTDATA;
+}
+
+public ArrayList(int initialCapacity) {
+    if (initialCapacity > 0) {
+        this.elementData = new Object[initialCapacity];
+    } else if (initialCapacity == 0) {
+        this.elementData = EMPTY_ELEMENTDATA;
+    } else {
+        throw new IllegalArgumentException("Illegal Capacity: "+
+                                           initialCapacity);
+    }
+}
+```
+
+
+
+新增元素的时候，会首先确保容量充足，然后把数据写入下一个位置：
+
+```java
+public boolean add(E e) {
+    ensureCapacityInternal(size + 1);  // Increments modCount!!
+    elementData[size++] = e;
+    return true;
+}
+
+//minCapacity = size + 1 也就是最小增容的情况应该为当前容量+1
+private void ensureCapacityInternal(int minCapacity) {
+	ensureExplicitCapacity(calculateCapacity(elementData, minCapacity));
+}
+```
+
+
+
+默认的大小是10，当需要扩容的时候，最小会扩容到这个默认值
+
+ArrayList里面的容量和size不是一个概念，size是指有内容的大小，容量是指底层数组的大小
+
+```java
+private static final int DEFAULT_CAPACITY = 10;
+
+//计算容量，这里如果当前容量为0，会取默认值（这里是10）和最小扩容量的最大值
+//如果当前不是空列表，则直接返回最小扩容量
+private static int calculateCapacity(Object[] elementData, int minCapacity) {
+	if (elementData == DEFAULTCAPACITY_EMPTY_ELEMENTDATA) {
+    	return Math.max(DEFAULT_CAPACITY, minCapacity);
+	}
+    return minCapacity;
+}
+
+//对于扩容量的边界检查
+private void ensureExplicitCapacity(int minCapacity) {
+	modCount++;
+	// overflow-conscious code
+    if (minCapacity - elementData.length > 0)
+    	grow(minCapacity);
+}
+```
+
+
+
+`ArrayList`的元素个数大于其容量，新的容量 = 原始大小+原始大小/2
+
+对这个新的容量要进行两个条件验证：
+
+1. 新的容量是否超出最大边界
+2. 新的容量是否小于最小扩容量
+
+```java
+private void grow(int minCapacity) {
+	// overflow-conscious code
+	int oldCapacity = elementData.length;
+	// 新的容量=原始大小+原始大小/2
+	int newCapacity = oldCapacity + (oldCapacity >> 1);
+	// 新设定容量小于最小扩容平量，则取最小扩容量
+	if (newCapacity - minCapacity < 0)
+		newCapacity = minCapacity;
+    // 新设定容量大于最大值，超出了边界数据
+	if (newCapacity - MAX_ARRAY_SIZE > 0)
+		//hugeCapacity判断非负数以及超过int最大值
+		newCapacity = hugeCapacity(minCapacity);
+	// minCapacity is usually close to size, so this is a win:
+	elementData = Arrays.copyOf(elementData, newCapacity);
+}
+```
+
+
+
+### 8. Map
+
+##### Map 相关基础知识
+
+- 了解Map吗？用过哪些Map的实现 答：`HashMap`、`Hashtable`、`LinkedHashMap`、`TreeMap`、`ConcurrentHashMap`
+
+   
+
+##### HashMap和Hashtable 的区别
+
+  - HashMap：底层是基于数组+链表，非线程安全的，默认容量是16、允许有空的健和值
+  - Hashtable：基于哈希表实现，线程安全的(加了synchronized)，默认容量是11，不允许有null的健和值
+
+ 
+
