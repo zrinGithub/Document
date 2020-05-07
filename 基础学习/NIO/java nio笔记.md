@@ -785,7 +785,7 @@ while(true){
 
 
 
-##### 打开ServerSocketChannel
+#### 打开ServerSocketChannel
 
 ```java
 ServerSocketChannel serverSocketChannel = ServerSocketChannel.open();
@@ -793,9 +793,98 @@ ServerSocketChannel serverSocketChannel = ServerSocketChannel.open();
 
 
 
+#### 关闭ServerSocketChannel
+
+```java
+serverSocketChannel.close();
+```
+
+
+
+#### 监听连接请求
+
+调用accept()方法阻塞并监听连接请求。
+
+当accept()方法返回，返回值SocketChannel。使用循环获取多个连接。
+
+```java
+while(true){
+    SocketChannel socketChannel =
+            serverSocketChannel.accept();
+    //do something with socketChannel...
+}
+```
+
+
+
+#### 非阻塞模式
+
+在非阻塞模式下accept()方法会立即返回，没有连接直接返回null。
+
+因此需要对获取的连接进行空校验：
+
+```java
+ServerSocketChannel serverSocketChannel = ServerSocketChannel.open();
+serverSocketChannel.socket().bind(new InetSocketAddress(9999));
+//设置为非阻塞模式
+serverSocketChannel.configureBlocking(false);
+
+while(true){
+    SocketChannel socketChannel =
+            serverSocketChannel.accept();
+	//非空校验
+    if(socketChannel != null){
+        //do something with socketChannel...
+    }
+}
+```
 
 
 
 
 
+## 非阻塞服务器
 
+作者的项目地址：https://github.com/jjenkov/java-nio-server.git
+
+
+
+### 非阻塞IO通道
+
+非阻塞IO管道连接了处理包含读写等非阻塞IO处理的整个过程。
+
+下图是一个简单的非阻塞IO管道
+
+*注意：此图仅是简化的流程，实际上初始化时是Component通过Selector在Channel读取数据，而不是Channel把数据压入Selectr再进入Component。*
+
+![non-blocking-server-1](.\image\non-blocking-server-1.png)
+
+
+
+- Component使用Selector来检查Channel中是否有数据来读取。
+
+- Component读取输入的数据并且据此产生输出数据。
+
+- Component将数据写入Channel
+
+
+
+非阻塞IO管道不需要同时读和写，一部分管道只是写数据，一部分只是读取数据。
+
+
+
+上图仅展示一个Component的情况，而通常可能包含多个Component处理数据，管道长度取决于业务需求。
+
+像从多个SockerChannel读取数据一样，非阻塞IO管道会出现同时读取多个Channel信息的情况。
+
+
+
+### 比较非阻塞IO管道和阻塞IO管道
+
+两者区别在于从底层Channel（socker or file）读取数据的过程。
+
+
+
+IO管道会把从流中读取的数据分割成连续的message。
+
+![non-blocking-server-2](.\image\non-blocking-server-2.png)
