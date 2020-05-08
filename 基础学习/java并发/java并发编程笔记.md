@@ -959,3 +959,83 @@ cells新建或扩容
 
 #### LongAccumulator类（JDK8新增）
 
+构造函数中：
+
+`accumulatorFunction`是一个运算接口
+
+`identity`作为运算的初始值。
+
+```java
+    public LongAccumulator(LongBinaryOperator accumulatorFunction,
+                           long identity) {
+        this.function = accumulatorFunction;
+        base = this.identity = identity;
+    }
+```
+
+
+
+第一个参数是一个双目运算接口：
+
+```java
+@FunctionalInterface
+public interface LongBinaryOperator {
+
+    /**
+     * Applies this operator to the given operands.
+     *
+     * @param left the first operand
+     * @param right the second operand
+     * @return the operator result
+     */
+    long applyAsLong(long left, long right);
+}
+```
+
+
+
+之前的`LongAdder`更像是一个特殊的`LongAccumulator`：
+
+```java
+new LongAccumulator(new LongBinaryOperator(){
+    @Override
+    public long applyAsLong(long left, long right){
+        return left + right;
+    }
+},0);
+```
+
+
+
+可以看到：
+
+这里调用`function.applyAsLong`来进行指定的计算方式
+
+调用`longAccumulate`传入了`LongBinaryOperator`参数
+
+```java
+	public void accumulate(long x) {
+        Cell[] cs; long b, v, r; int m; Cell c;
+        if ((cs = cells) != null
+            || ((r = function.applyAsLong(b = base, x)) != b
+                && !casBase(b, r))) {
+            boolean uncontended = true;
+            if (cs == null
+                || (m = cs.length - 1) < 0
+                || (c = cs[getProbe() & m]) == null
+                || !(uncontended =
+                     (r = function.applyAsLong(v = c.value, x)) == v
+                     || c.cas(v, r)))
+                longAccumulate(x, function, uncontended);
+        }
+    }
+```
+
+
+
+### 并发包中的List
+
+#### CopyOnWriteArrayList
+
+使用了写时复制的策略和`ReentrantLocak`，每次的修改都是在底层一个复制的数组里面操作。
+
