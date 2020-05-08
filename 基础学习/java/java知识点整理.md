@@ -1,6 +1,16 @@
-### 一. 知识点分析
+# Java知识点整理
 
-#### 1. 介绍
+整理的时候源码大多数是看jdk13的代码。
+
+
+
+[TOC]
+
+
+
+## 一. 知识点分析
+
+### 1. 介绍
 
 - 需要掌握的知识点：
 
@@ -18,13 +28,13 @@
 
    
 
-### 二. 编程基础
+## 二. 编程基础
 
-#### 1. 运算符
+### 1. 运算符
 
 
 
-##### 运算符 &和&&、|和||的区别吗？
+#### 运算符 &和&&、|和||的区别吗？
 
 
 
@@ -56,7 +66,7 @@
 
 
 
-##### 用最有效率的方法计算2乘以8
+#### 用最有效率的方法计算2乘以8
 
 
 
@@ -74,7 +84,7 @@ int DEFAULT_INITIAL_CAPACITY = 1 << 4; // aka 16
 
 
 
-##### 位移
+#### 位移
 
 << 左移，x<<1相当于x乘以2
 
@@ -84,7 +94,7 @@ int DEFAULT_INITIAL_CAPACITY = 1 << 4; // aka 16
 
 
 
-##### 传递两个非0的int数值进去，实现变量交换的方式
+#### 传递两个非0的int数值进去，实现变量交换的方式
 
 - 基础：临时变量
 
@@ -124,9 +134,9 @@ public static void swap2(int a, int b){
 
 
 
-#### 2. 关于数据类型
+### 2. 关于数据类型
 
-##### java数据类型分类
+#### java数据类型分类
 
 - 基础数据类型：byte、short、int、long、float、double、char、boolean
 - 引用数据类型：其他都是引用类型
@@ -136,7 +146,7 @@ public static void swap2(int a, int b){
 
 
 
-##### ++i与i++
+#### ++i与i++
 
   ```java
   int i = 5;
@@ -148,16 +158,16 @@ public static void swap2(int a, int b){
 
 
 
-##### `==` 和`equals()`的区别
+#### `==` 和`equals()`的区别
 
   - 基本数据类型比较 要用==判断是否相等
   - 引用数据类型： **==比较的是内存地址是否一样**，不同对象的内存地址不一样，equals比较的是具体的内容， 也可以让开发者去定义什么条件去判断两个对象是否一样
 
  
 
-#### 3. try-catch-finally
+### 3. try-catch-finally
 
-##### try-catch-finally里面都有return，会返回什么？
+#### try-catch-finally里面都有return，会返回什么？
 
 在执行try、catch中的**return之前一定会执行finally中的代码**（如果finally存在），如果finally中有return语句，就会直接执行finally中的return方法，所以finally中的return语句一定会被执行的。
 
@@ -213,7 +223,7 @@ public class ExceptionReturnDemo {
 
 
 
-##### try-with-resource
+#### try-with-resource
 
 JDK7以前需要自己关闭资源：
 
@@ -279,9 +289,9 @@ try (outputStream; outputStream2) {
 
 
 
-#### 4. 文件API和递归
+### 4. 文件API和递归
 
-##### 找出目录下的所有子目录以及子文件
+#### 找出目录下的所有子目录以及子文件
 
 ```java
 public static void main(String[] args) {
@@ -313,11 +323,11 @@ private static void getAllFilePaths(File filePath, List<String> paths) {
 
 
 
-#### 5. 字符串
+### 5. 字符串
 
 
 
-##### String str = new String("ASD"); 创建了几个对象
+#### String str = new String("ASD"); 创建了几个对象
 
 
 
@@ -327,7 +337,7 @@ private static void getAllFilePaths(File filePath, List<String> paths) {
 
 
 
-##### 字符串比较
+#### 字符串比较
 
 下面是比较什么？输出结果是什么？为什么是这样的结果 
 
@@ -381,7 +391,7 @@ s2 = s1 + ".net",   //变量+常量=堆
 
 
 
-##### String、StringBuffer与StringBuilder的区别与应用
+#### String、StringBuffer与StringBuilder的区别与应用
 
 - 相同点
 
@@ -416,9 +426,9 @@ StringBuffer里面操作方法用**synchronized** ，效率相对更低,是线�
 
  
 
-#### 6. 面向对象
+### 6. 面向对象
 
-##### 面向对象的四大特性
+#### 面向对象的四大特性
 
 **抽象**
 关键词`abstract`声明的类叫作抽象类，`abstract`声明的⽅法叫抽象⽅法
@@ -458,7 +468,7 @@ StringBuffer里面操作方法用**synchronized** ，效率相对更低,是线�
 
  
 
-##### Overload和Override的区别？
+#### Overload和Override的区别？
 
 重载**Overload**：表示同一个类中可以有多个名称相同的方法，但这些方法的参数列表各不相同，参数个数或类型不同
 
@@ -466,7 +476,7 @@ StringBuffer里面操作方法用**synchronized** ，效率相对更低,是线�
 
  
 
-##### 接口是否可以继承接口？接口是否支持多继承？类是否支持多继承？接口里面是否可以有方法实现
+#### 接口是否可以继承接口？接口是否支持多继承？类是否支持多继承？接口里面是否可以有方法实现
 
 - 接⼝⾥可以有静态⽅法和⽅法体
 - 接⼝中所有的⽅法必须是抽象⽅法（JDK8之后就不是）
@@ -477,7 +487,7 @@ StringBuffer里面操作方法用**synchronized** ，效率相对更低,是线�
 
  
 
-##### JDK8里面接口新特性
+#### JDK8里面接口新特性
 
 - interface中可以有static⽅法，但必须有⽅法实现体，该⽅法只属于该接⼝，接⼝名直接调⽤ 该⽅法
 - 接⼝中新增default关键字修饰的⽅法，default⽅法只能定义在接⼝中，可以在⼦类或⼦接⼝ 中被重写default定义的⽅法必须有⽅法体
@@ -486,9 +496,9 @@ StringBuffer里面操作方法用**synchronized** ，效率相对更低,是线�
 
  
 
-#### 7. List
+### 7. List
 
-##### Vector和ArrayList、LinkedList说明
+#### Vector和ArrayList、LinkedList说明
 
 答案：
 
@@ -503,7 +513,7 @@ StringBuffer里面操作方法用**synchronized** ，效率相对更低,是线�
 
   
 
-##### ArrayList应该怎么做才能保证线程安全
+#### ArrayList应该怎么做才能保证线程安全
 
 - 自己写个包装类，根据业务一般是对 add/update/remove加锁 
 
@@ -533,7 +543,7 @@ public CopyOnWriteArrayList(Collection<? extends E> c);
 
 
 
-##### CopyOnWriteArrayList知识点
+#### CopyOnWriteArrayList知识点
 
 了解`CopyOnWriteArrayList`吗？和 `Collections.synchronizedList`实现线程安全有什么区别, 使用场景是怎样的？
 
@@ -557,7 +567,7 @@ public CopyOnWriteArrayList(Collection<? extends E> c);
 
 
 
-##### ArrayList扩容机制
+#### ArrayList扩容机制
 
 JDK1.7之前ArrayList默认大小是10，JDk1.7之后是0。若已经指定大小则集合大小为指定的。
 
@@ -655,16 +665,180 @@ private void grow(int minCapacity) {
 
 ### 8. Map
 
-##### Map 相关基础知识
+#### Map相关基础知识
 
-- 了解Map吗？用过哪些Map的实现 答：`HashMap`、`Hashtable`、`LinkedHashMap`、`TreeMap`、`ConcurrentHashMap`
+Map的实现 
 
-   
+- `HashMap`、`Hashtable`、`LinkedHashMap`、`TreeMap`、`ConcurrentHashMap`
 
-##### HashMap和Hashtable 的区别
 
-  - HashMap：底层是基于数组+链表，非线程安全的，默认容量是16、允许有空的健和值
-  - Hashtable：基于哈希表实现，线程安全的(加了synchronized)，默认容量是11，不允许有null的健和值
+
+#### HashMap和Hashtable 的区别
+
+  - `HashMap`：底层是基于数组+链表，非线程安全的，默认容量是16、允许有空的健和值
+  - `Hashtable`：基于哈希表实现，线程安全的(加了`synchronized`)，默认容量是11，不允许有null的健和值
 
  
+
+#### hashCode和equals
+
+`hashcode()`
+
+顶级类`Object`里面的方法，所有的类都是继承`Object`,返回是一个`int`类型的数。根据一定的hash规则(存储地址，字段，长度等)，映射成一个数组，即散列值。
+	
+
+`equals()`
+
+顶级类Object里面的方法，所有的类都是继承Object,返回是一个boolean类型
+
+根据自定义的匹配规则，用于匹配两个对象是否一样，一般逻辑如下：
+
+- 判断地址是否一样
+- 非空判断和Class类型判断
+- 强转
+- 对象里面的字段一一匹配
+
+使用场景：对象比较、或者集合容器里面排重、比较、排序
+
+
+
+编写一个User对象，重写里面的`hashcode()`和`equal()`方法
+
+```java
+@Data
+public class User {
+    private int age;
+    private  String name;
+    private Date time;
+
+    @Override
+    public int hashCode() {
+        //int code = age/name.length()+time.hashCode();
+        //return code
+        return Objects.hash(age,name,time);
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if(this == obj) return true;
+        if(obj == null || getClass() != obj.getClass()) 
+            return false;
+        User user = (User) obj;
+        return age == user.age 
+            && Objects.equals(name, user.name) 
+            && Objects.equals(time, user.time);
+    }
+}
+```
+
+ 
+
+ 
+
+#### HashMap和TreeMap选择
+
+`HashMap`: 散列桶(数组+链表)
+
+可以实现快速的存储和检索，适用于在map中插入删除和定位元素
+
+
+
+`TreeMap`:使用存储结构是一个平衡二叉树->红黑树，可以自定义排序规则，要实现`Comparator`接口
+
+能便捷的实现内部元素的各种排序，但是一般性能比`HashMap`差，适用于需要排序的map结构（微信支付签名)
+
+
+
+#### Set和Map的关系
+
+`Set`核心就是不保存重复的元素，存储一组唯一的对象
+`Set`每一种实现都是对应`Map`里面的一种封装，
+`HashSet`对应的就是`HashMap`，`TreeSet`对应的就是`TreeMap`
+
+
+
+#### 需要排序的Map
+
+ `LinkedHashMap`：按照自然的添加顺序
+
+`TreeMap`： 按照设定（`Comparator`接口实现）的排序规则
+
+ 
+
+#### 线程安全的Map
+
+多线程环境下可以：
+
+- `concurrent`包下的`ConcurrentHashMap`，里面使用CAS来进行操作
+
+- `Collections.synchronizedMap()`里面会在所有的操作外面包一层`synchronized`。
+
+`ConcurrentHashMap`虽然是线程安全，但是他的效率比`Hashtable`（使用`synchronized`）要高很多
+
+
+
+#### HashMap实现原理
+
+HashMap底层结构：数组+链表+红黑树优化（jdk8才有红黑树）
+
+链表越长，遍历就越消耗时间。红黑树能够把链表查询的O(n)优化到O(logn)
+
+```java
+	//Node数组组成的map表结构
+	transient Node<K,V>[] table;
+	
+	//Node是一个链表的结构
+	static class Node<K,V> implements Map.Entry<K,V> {
+        final int hash;
+        final K key;
+        V value;
+        Node<K,V> next;
+		
+        //......
+    }
+	
+```
+
+
+
+在JDK1.8中，链表的长度大于8，链表会转换成红黑树
+
+```java
+if (binCount >= TREEIFY_THRESHOLD - 1) // -1 for 1st
+	treeifyBin(tab, hash);
+```
+
+
+
+#### 数据结构：树
+
+二叉查找树在特殊情况下会变成一条线性结构，和原先的链表存在一样的深度遍历问题，查找性能就会慢，
+使用红黑树主要是提升查找数据的速度，红黑树是平衡二叉树的一种，插入新数据后会通过左旋，右旋、变色等操作来保持平衡，解决单链表查询深度的问题
+
+数据量少的时候操作数据，遍历线性表比红黑树所消耗的资源少，且前期数据少 平衡二叉树保持平衡是需要消耗资源的，所以前期采用线性表，等到一定数之后变换到红黑树
+
+
+
+#### 处理Hash碰撞方法
+
+- 开放地址法
+  当发生地址冲突时，按照某种方法继续探测哈希表中的其他存储单元，直到找到空位置为止。
+
+- 再哈希法
+
+  取其他方式获取hash值，比如首字母失败就用第二个字母
+- 链表法
+
+  像`HashMap`这样优化结构，每个桶里面加入链表结构
+
+
+
+
+
+
+
+
+
+
+
 
