@@ -540,3 +540,422 @@ synchronized是一个可重入锁。
 
 ## 二. 并发包中的主要组件实现原理
 
+### ThreadLocalRandom
+
+#### 已有的Random的并发处理
+
+使用：
+
+```java
+//产生实例
+Random random = new Random();
+//获取随机数
+random.nextInt(5);
+```
+
+
+
+`Random`类生成随机数：
+
+```java
+    public int nextInt(int bound) {
+
+        //......
+        int r = next(31);
+        
+        int m = bound - 1;
+        //如果和减去一的数与为0，说明这个数是2的次方
+        if ((bound & m) == 0)  // i.e., bound is a power of 2
+            r = (int)((bound * (long)r) >> 31);
+        else {
+            for (int u = r;
+                 u - (r = u % bound) + m < 0;
+                 u = next(31))
+                ;
+        }
+        return r;
+    }
+```
+
+
+
+在`next()`函数里面，使用老的随机种子算出新种子，种子使用`AtomicLong`原子操作类（后面会详细分析）使用CAS操作来确保在多线程操作的情况下，只有一个线程可以操作变量seed：
+
+```java
+    protected int next(int bits) {
+        long oldseed, nextseed;
+        AtomicLong seed = this.seed;
+        do {
+            oldseed = seed.get();
+            nextseed = (oldseed * multiplier + addend) & mask;
+        } while (!seed.compareAndSet(oldseed, nextseed));
+        return (int)(nextseed >>> (48 - bits));
+    }
+```
+
+但是这里失败的线程使用`while`循环一直**自旋**来重新获取种子，这样降低了并发的性能。
+
+
+
+#### ThreadLocalRandom的处理
+
+使用方式：
+
+```java
+//获取实例
+ThreadLocalRandom random = ThreadLocalRandom.current();
+//获取随机数
+random.nextInt(8);
+```
+
+
+
+其原理和ThreadLocal类似，也是每个线程根据自己的本地种子生成新的种子。
+
+`Thread`维护了`threadLocalRandomSeed`、`threadLocalRandomProbe`、`threadLocalRandomSecondarySeed` 
+
+`ThreadLocalRandom`作为操作的工具类，继承了`Random`类，重写了`nextInt()`等方法，每次计算种子的时候，会把线程本地的数据拿出来计算新的种子。
+
+
+
+`ThreadLocalRandom`维护了`Thread`几个关键变量在类中的偏移量：
+
+```java
+    //unsafe实例
+	private static final Unsafe U = Unsafe.getUnsafe();
+	//threadLocalRandomSeed
+    private static final long SEED = U.objectFieldOffset
+            (Thread.class, "threadLocalRandomSeed");
+    private static final long PROBE = U.objectFieldOffset
+            (Thread.class, "threadLocalRandomProbe");
+    private static final long SECONDARY = U.objectFieldOffset
+            (Thread.class, "threadLocalRandomSecondarySeed");
+```
+
+
+
+`current()`方法：
+
+```java
+    public static ThreadLocalRandom current() {
+        //threadLocalRandomProbe==0说明这是线程第一次调用ThreadLocalRandom实例
+        //需要计算线程的初始化种子变量
+        if (U.getInt(Thread.currentThread(), PROBE) == 0)
+            localInit();
+        return instance;
+    }
+	//初始化的时候
+    static final void localInit() {
+        int p = probeGenerator.addAndGet(PROBE_INCREMENT);
+        int probe = (p == 0) ? 1 : p; // skip 0
+        //计算初始化种子
+        long seed = mix64(seeder.getAndAdd(SEEDER_INCREMENT));
+        Thread t = Thread.currentThread();
+		//变量设置到当前线程（threadLocalRandomSeed、threadLocalRandomProbe）
+        U.putLong(t, SEED, seed);
+        U.putInt(t, PROBE, probe);
+    }
+```
+
+
+
+`nextInt()`会重新计算种子产生随机数：
+
+```java
+    public int nextInt() {
+        return mix32(nextSeed());
+    }
+```
+
+
+
+**`nextSeed()`重新计算种子：**
+
+```java
+    final long nextSeed() {
+        Thread t; long r; // read and update per-thread seed
+        //更新种子
+        U.putLong(t = Thread.currentThread(), SEED,
+                  r = U.getLong(t, SEED) + GAMMA);
+        return r;
+    }
+```
+
+`U.getLong(t, SEED) + GAMMA)`获取当前线程的`threadLocalRandomSeed`，加上`GAMMA`作为新的种子并且放入当前线程的`threadLocalRandomSeed`中。
+
+
+
+### 原子操作类
+
+JUC中的原子操作类，都是使用非阻塞算法CAS来实现。
+
+
+
+#### 原子变量操作类
+
+- `AtomicInteger`
+- `AtomicLong`
+- `AtomicBoolean`
+
+
+
+##### 使用示例
+
+```java
+public class AtomicTest {
+    //创建Long类型的原子计数器
+    private static AtomicLong atomicLong = new AtomicLong();
+
+    public static void main(String[] args) throws InterruptedException {
+        Thread threadA = new Thread(() -> {
+            int count = 100;
+            while (count-- > 0) {
+                System.out.println(Thread.currentThread().getName() + " now value:" + atomicLong.incrementAndGet());
+            }
+        }, "A");
+        Thread threadB = new Thread(() -> {
+            int count = 100;
+            while (count-- > 0) {
+                System.out.println(Thread.currentThread().getName() + " now value:" + atomicLong.addAndGet(3));
+            }
+        }, "B");
+        threadA.start();
+        threadB.start();
+        threadA.join();
+        threadB.join();
+        System.out.println("main over , now atomicLong = " + atomicLong.get());
+    }
+}
+/**
+ * output:
+ * ......
+ * A now value:392
+ * B now value:395
+ * A now value:396
+ * A now value:397
+ * A now value:398
+ * A now value:399
+ * A now value:400
+ * main over , now atomicLong = 400
+ */
+```
+
+加大循环的次数，改为long会产生数据计算错误。
+
+
+
+##### 源码
+
+```java
+public class AtomicLong extends Number implements java.io.Serializable {
+    private static final long serialVersionUID = 1927816293512124184L;
+    //JVM是否支持Long类型无锁CAS
+	static final boolean VM_SUPPORTS_LONG_CAS = VMSupportsCS8();
+    private static native boolean VMSupportsCS8();
+    //获取Unsafe实例
+    private static final jdk.internal.misc.Unsafe U = jdk.internal.misc.Unsafe.getUnsafe();
+    //获取变量value在类中的偏移量
+    private static final long VALUE = U.objectFieldOffset(AtomicLong.class, "value");
+	//volatile修饰的数据值
+    private volatile long value;
+ 
+    //读数据
+    public final long get() {
+        return value;
+    }
+    
+    //写数据保持可见性
+    public final void set(long newValue) {
+        // See JDK-8180620: Clarify VarHandle mixed-access subtleties
+        U.putLongVolatile(this, VALUE, newValue);
+    }
+
+    //底层Unsafe使用的是自旋CAS判断weakCompareAndSetLong
+    public final long getAndSet(long newValue) {
+        return U.getAndSetLong(this, VALUE, newValue);
+    }
+    
+    //......
+}
+```
+
+
+
+#### LongAdder（JDK8新增的原子操作类）
+
+`AtomicLong`的源码可以看出来，涉及原子操作都是使用循环**自旋**的方式来竞争同一个原子变量。
+
+
+
+`LongAdder`维护了多个Cell变量（原子性更新数组），每个Cell变量里面有初始值为0的long型变量。
+
+多个线程如果争夺一个Cell的变量时失败，不会一直自旋CAS重试，而是会在其他Cell的变量上面进行CAS尝试。
+
+获取值的时候，会把所有Cell变量的value值累加后再加上base基准值进行返回。
+
+
+
+`LongAdder`对Cell是惰性加载的，并发较少的时候，直接操作base。
+
+原子性数组使用`@sun.misc.Contended`对Cell进行了字节填充，占据了一个缓存行，避免了伪共享的情况。
+
+
+
+##### 源码分析
+
+`LongAdder`继承了`Striped64`
+
+```java
+@SuppressWarnings("serial")
+abstract class Striped64 extends Number {
+    //填充缓存行
+    @jdk.internal.vm.annotation.Contended static final class Cell {
+        //volatile修饰，保证数据的可见性
+        volatile long value;
+        Cell(long x) { value = x; }
+        final boolean cas(long cmp, long val) {
+            return VALUE.compareAndSet(this, cmp, val);
+        }
+        final void reset() {
+            VALUE.setVolatile(this, 0L);
+        }
+        final void reset(long identity) {
+            VALUE.setVolatile(this, identity);
+        }
+        final long getAndSet(long val) {
+            return (long)VALUE.getAndSet(this, val);
+        }
+
+        // 以前的版本就是使用Unsafe来操作的
+        // jdk9使用变量句柄VarHandle
+        // VarHandle mechanics
+        private static final VarHandle VALUE;
+        static {
+            try {
+                MethodHandles.Lookup l = MethodHandles.lookup();
+                VALUE = l.findVarHandle(Cell.class, "value", long.class);
+            } catch (ReflectiveOperationException e) {
+                throw new ExceptionInInitializerError(e);
+            }
+        }
+    }
+	transient volatile Cell[] cells;
+    transient volatile long base;
+    transient volatile int cellsBusy;
+    //......
+}
+```
+
+我使用的环境是jdk13，这里可以看到Cell里面的CAS操作发生了改变，不再使用`Unsafe`来进行操作，而是使用JDK9中的`java.lang.invoke.VarHandle`来进行操作（实际上作为`Unsafe`的替代者，在安全性与可用性上面更好->后面要是有时间加说明到后面）。
+
+
+
+`LongAdder`
+
+```java
+public class LongAdder extends Striped64 implements Serializable {
+    private static final long serialVersionUID = 7249069246863182397L;
+
+    //获取当前的值
+    public long longValue() {
+        return sum();
+    }
+    
+    //返回当前的值，就是base加上所有Cell内部的value值
+	public long sum() {
+        Cell[] cs = cells;
+        long sum = base;
+        if (cs != null) {
+            for (Cell c : cs)
+                if (c != null)
+                    sum += c.value;
+        }
+        return sum;
+    }
+    
+    //重置
+    public void reset() {
+        Cell[] cs = cells;
+        base = 0L;
+        if (cs != null) {
+            for (Cell c : cs)
+                if (c != null)
+                    c.reset();
+        }
+    }
+    
+    //获取值并且重置
+    public long sumThenReset() {
+        Cell[] cs = cells;
+        long sum = getAndSetBase(0L);
+        if (cs != null) {
+            for (Cell c : cs) {
+                if (c != null)
+                    sum += c.getAndSet(0L);
+            }
+        }
+        return sum;
+    }
+    
+    public void increment() {
+        add(1L);
+    }
+
+    public void decrement() {
+        add(-1L);
+    }
+    
+    //......
+}
+```
+
+
+
+把区别于`AtomicLong`的自旋CAS操作的add操作单独拿出来分析：
+
+```java
+    //这是核心代码，对比AtomicLong里面调用Unsafe的getAndAddLong、getAndSetLong使用自旋CAS操作
+    public void add(long x) {
+        Cell[] cs; long b, v; int m; Cell c;
+        
+        //如果cells是空->直接使用base值作为预期值进行cas操作判断结果
+        //如果cells不为空且cas操作失败则进入判断体
+        if ((cs = cells) != null || !casBase(b = base, b + x)) {
+            boolean uncontended = true;
+            //如果cells为空则通过getProbe() & m判断在哪一个cell操作
+            //getProbe()是 threadLocalRandomProbe 的值
+            //之后在选定的Cell里面进行cas操作
+            //如果cell里面的cas还是失败，进入longAccumulate方法
+            if (cs == null || (m = cs.length - 1) < 0 ||
+                (c = cs[getProbe() & m]) == null ||
+                !(uncontended = c.cas(v = c.value, v + x)))
+                longAccumulate(x, null, uncontended);
+        }
+    }
+```
+
+
+
+`casBase()`是`Striped64`里面的方法：
+
+```java
+	//可以视为更安全的Unsafe操作类
+	private static final VarHandle BASE;
+
+	final boolean casBase(long cmp, long val) {
+        return BASE.compareAndSet(this, cmp, val);
+    }
+```
+
+
+
+`longAccumulate()`是`Striped64`里面的方法，这个太长也没看懂不贴了：
+
+通过threadLocalRandomProbe判断是否第一次操作进行初始化
+
+cells新建或扩容
+
+
+
+#### LongAccumulator类（JDK8新增）
+
