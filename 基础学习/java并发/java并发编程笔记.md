@@ -1039,3 +1039,218 @@ new LongAccumulator(new LongBinaryOperator(){
 
 使用了写时复制的策略和`ReentrantLocak`，每次的修改都是在底层一个复制的数组里面操作。
 
+
+
+##### 构造器
+
+```java
+	private transient volatile Object[] array;
+
+	//默认设置空的数组初始化
+	public CopyOnWriteArrayList() {
+        setArray(new Object[0]);
+    }
+
+	final void setArray(Object[] a) {
+        array = a;
+    }
+
+	//拷贝数组存储本地
+	public CopyOnWriteArrayList(E[] toCopyIn) {
+        setArray(Arrays.copyOf(toCopyIn, toCopyIn.length, Object[].class));
+    }
+
+	//如果参数是CopyOnWriteArrayList类型就直接获取数组
+	//如果不是就复制数组，判断并处理为基类Object数组
+	public CopyOnWriteArrayList(Collection<? extends E> c) {
+        Object[] elements;
+        if (c.getClass() == CopyOnWriteArrayList.class)
+            elements = ((CopyOnWriteArrayList<?>)c).getArray();
+        else {
+            elements = c.toArray();
+            // c.toArray might (incorrectly) not return Object[] (see 6260652)
+            if (elements.getClass() != Object[].class)
+                elements = Arrays.copyOf(elements, elements.length, Object[].class);
+        }
+        setArray(elements);
+    }
+```
+
+
+
+##### 添加元素
+
+```java
+	final transient ReentrantLock lock = new ReentrantLock();
+
+	public boolean add(E e) {
+        //使用独占锁ReentrantLock
+        final ReentrantLock lock = this.lock;
+        //获取锁
+        lock.lock();
+        try {
+            //获取当前数组
+            Object[] elements = getArray();
+            int len = elements.length;
+            //拷贝一份数组
+            Object[] newElements = Arrays.copyOf(elements, len + 1);
+            //添加新的元素
+            newElements[len] = e;
+            //设置当前数组为拷贝的数据
+            setArray(newElements);
+            return true;
+        } finally {
+            //释放锁
+            lock.unloc();
+        }
+    }
+
+	public void add(int index, E element) {
+        final ReentrantLock lock = this.lock;
+        lock.lock();
+        try {
+            Object[] elements = getArray();
+            int len = elements.length;
+            //边界判断
+            if (index > len || index < 0)
+                throw new IndexOutOfBoundsException("Index: "+index+
+                                                    ", Size: "+len);
+            Object[] newElements;
+            //获取需要移动的元素个数
+            int numMoved = len - index;
+            //如果是在末尾设置元素
+            //直接在原数组扩容一位之后复制给新的数组
+            if (numMoved == 0)
+                newElements = Arrays.copyOf(elements, len + 1);
+            else {
+                //新数组要扩容一位接收新元素
+                newElements = new Object[len + 1];
+                //把设定位置之前的数据拷贝给新的数据，长度为index（也就是index位前面数据的大小）
+                System.arraycopy(elements, 0, newElements, 0, index);
+                //把设定位置之后数据拷贝给新的数组，长度为numMoved
+                System.arraycopy(elements, index, newElements, index + 1,
+                                 numMoved);
+            }
+            //在设定位置上设置新的元素
+            newElements[index] = element;
+            setArray(newElements);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+	//这里和add差不多，只是加入快照作为对比
+	public boolean addIfAbsent(E e) {
+        //获取当前元素数组作为快照记录
+        Object[] snapshot = getArray();
+        //检查元素是否存在，如果存在直接返回false，否则进入addIfAbbset的重载方法
+        return indexOf(e, snapshot, 0, snapshot.length) >= 0 ? false :
+            addIfAbsent(e, snapshot);
+    }
+
+	private boolean addIfAbsent(E e, Object[] snapshot) {
+        final ReentrantLock lock = this.lock;
+        //加锁
+        lock.lock();
+        try {
+            // 重新获取当前的数组
+            Object[] current = getArray();
+            int len = current.length;
+            // 如果当前的数组和之前的快照不一致
+            // 说明有改动的内容
+            if (snapshot != current) {
+                // 这里取两个最小的长度，如果有元素变化或者已经有了这个元素，则返回false
+                int common = Math.min(snapshot.length, len);
+                for (int i = 0; i < common; i++)
+                    if (current[i] != snapshot[i] && eq(e, current[i]))
+                        return false;
+                // 如果当前数组已经有这个元素，就返回false
+                if (indexOf(e, current, common, len) >= 0)
+                        return false;
+            }
+            // 拷贝一份n+1的数组，并把新加的元素加到最后一位
+            Object[] newElements = Arrays.copyOf(current, len + 1);
+            newElements[len] = e;
+            // 设置新的数组
+            setArray(newElements);
+            return true;
+        } finally {
+            //释放锁
+            lock.unlock();
+        }
+    }
+```
+
+`addIfAbsent`实际上检查了三次元素是否存在，分别是在获取锁之前，获取锁之后比较当前和快照，比较当前是否存在。
+
+
+
+##### 获取元素
+
+```java
+	public E get(int index) {
+        return get(getArray(), index);
+    }
+
+	private E get(Object[] a, int index) {
+        return (E) a[index];
+    }
+
+	final Object[] getArray() {
+        return array;
+    }
+```
+
+这里可以看到，因为没有加锁，可能线程A在读取数据的时候，已经把旧的array压栈，新线程B对数组进行了加锁修改，因为`CopyOnWriteArray`是复制后再操作的，所以线程A后面再改数据还是指向原来的数组。这里体现了`copy-on-write-list`的**弱一致性**，每次读取的不一定是最新的数据，
+
+
+
+##### 修改指定元素
+
+```java
+	public E set(int index, E element) {
+        final ReentrantLock lock = this.lock;
+        lock.lock();
+        try {
+            Object[] elements = getArray();
+            E oldValue = get(elements, index);
+
+            if (oldValue != element) {
+                int len = elements.length;
+                //复制新的数组
+                Object[] newElements = Arrays.copyOf(elements, len);
+                newElements[index] = element;
+                //修改数组
+                setArray(newElements);
+            } else {
+                //array是volatile
+                // Not quite a no-op; ensures volatile write semantics
+                setArray(elements);
+            }
+            return oldValue;
+        } finally {
+            lock.unlock();
+        }
+    }
+```
+
+
+
+##### 删除元素
+
+删除的几个操作和新增类似，指定位置删除和指定位置新增差不多，指定对象删除和`addIfAbsebt`差不多。
+
+
+
+##### 迭代器
+
+使用迭代的时候，和读取数据一样，因为指向的是旧的数组，而其他线程的修改操作是复制后再操作的，所以在迭代的时候，对其他线程的修改是不可见的，也是*弱一致性*的体现。
+
+
+
+
+
+### 锁原理
+
+#### LockSupport工具类
+
