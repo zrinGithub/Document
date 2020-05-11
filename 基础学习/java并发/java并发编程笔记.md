@@ -399,6 +399,8 @@ public native void park(boolean isAbsolute, long time);
 public native void unpark(Object thread);
 ```
 
+> 这些方法经常有`isAbsolute`的参数，如果为`true`表示设定的是绝对时间点，如果为`false`表示设定的是时长。
+
 
 
 这里如果需要使用使用Unsafe类，需要使用反射的方法，因为在getUnsafe方法中，会判断是否是BootStrap类加载器：
@@ -445,6 +447,30 @@ public class TestUnSafe {
     }
 }
 ```
+
+
+
+### MethodHandles与VarHandle
+
+`VarHandle`是jdk9后面引进的变量句柄，这里记录一下常用的写法（`java.util.concurrent.locks.AbstractQueuedSynchronizer`里面的代码）：
+
+```java
+//这里的Lookup内部类是一个变量句柄的工厂类
+MethodHandles.Lookup l = MethodHandles.lookup();
+//findVarHandle  
+//第一个参数变量所在类的类型
+//第二个参数变量名称
+//第三个参数变量类型
+NEXT = l.findVarHandle(Node.class, "next", Node.class);
+NEXT.compareAndSet(this, expect, update);
+NEXT.set(this, new Node());
+```
+
+其他的很多和`Unsafe`差不多，比如`volatile`语义写、cas。
+
+
+
+
 
 
 
@@ -1254,4 +1280,366 @@ new LongAccumulator(new LongBinaryOperator(){
 
 #### LockSupport工具类
 
-z
+`LockSupport`底层使用`Unsafe`来完成**挂起和唤醒**线程。
+
+```java
+private static final Unsafe U = Unsafe.getUnsafe();
+```
+
+用于创建锁和封装其他的同步类。
+
+
+
+`LockSupport`与每个使用它的线程都会关联一个**许可证**
+
+默认情况下调用`LockSupport`的线程是不持有**许可证**的
+
+
+
+##### 源码分析
+
+```java
+	//如果当前线程已经有关联的许可证，name就会马上返回
+	//否则会开始阻塞挂起	
+	//注意，使用unpark、interrupt或者被虚假唤醒，也会返回，所以使用的时候要使用循环判断条件
+	public static void park() {
+        U.park(false, 0L);
+    }
+
+	//超时返回的版本
+    public static void parkNanos(long nanos) {
+        if (nanos > 0)
+            U.park(false, nanos);
+    }
+
+	//阻塞当前线程并且设置
+    public static void park(Object blocker) {
+        Thread t = Thread.currentThread();
+        //设置当前线程的parkBlocker变量
+        setBlocker(t, blocker);
+        //使用Unsafe挂起线程
+        U.park(false, 0L);
+        //线程被激活以后需要清除parkBlocker变量
+        setBlocker(t, null);
+    }
+
+	//Thread中的变量 volatile Object parkBlocker;
+	private static final long PARKBLOCKER = U.objectFieldOffset
+            (Thread.class, "parkBlocker");
+
+    private static void setBlocker(Thread t, Object arg) {
+        // Even though volatile, hotspot doesn't need a write barrier here.
+        U.putReference(t, PARKBLOCKER, arg);
+    }
+
+	//unpark的实际作用就是使参数线程获取 许可证 
+	//也就是即使unpark在park前调用，调用park也会马上返回
+    public static void unpark(Thread thread) {
+        if (thread != null)
+            U.unpark(thread);
+    }
+```
+
+其他还有
+
+`public static void parkNanos(Object blocker, long nanos);`
+
+`public static void parkUntil(Object blocker, long deadline);`
+
+
+
+调用`unpark()`之后，后面调用`park()`只能释放一次：
+
+```java
+public class LockSupportDemo2 {
+    public static void main(String[] args) throws Exception {
+        LockSupport.unpark(Thread.currentThread());
+        LockSupport.park();
+        System.out.println("end park1!");
+        LockSupport.park();
+        System.out.println("end park2!");
+    }
+}
+/**
+ * end park1!
+ * jstack pid可以看到： java.lang.Thread.State: WAITING
+ */
+```
+
+
+
+因为我们不知道`park()`返回的原因，所以使用循环判定：
+
+比如：我们设定了只有中断才返回：
+
+```java
+public class LockSupportDemo {
+    public static void main(String[] args) throws Exception {
+        Thread A = new Thread(() -> {
+            System.out.println("child");
+            while (!Thread.currentThread().isInterrupted()){
+                LockSupport.park();
+            }
+            System.out.println("child thread unpark");
+        });
+        A.start();
+        Thread.sleep(1000);
+
+        System.out.println("main thread begin unpark!");
+
+        //中断子线程
+        A.interrupt();
+        //不会起作用，因为循环判定失败
+//        LockSupport.unpark(A);
+    }
+}
+```
+
+
+
+##### 应用
+
+使用LockSupport设计锁：
+
+```java
+public class FIFOMutex {
+    private final AtomicBoolean locked = new AtomicBoolean(false);
+    private final Queue<Thread> waiters = new ConcurrentLinkedQueue<>();
+
+    public void lock() {
+        boolean wasInterrupted = false;
+        Thread currentThread = Thread.currentThread();
+        waiters.add(currentThread);
+
+        //判断是否队首
+        //如果当前线程不是队首的线程，把当前线程挂起
+        //如果是，则cas加锁设定locked=true，cas失败则会继续挂起
+        //
+        while (waiters.peek() != currentThread || !locked.compareAndSet(false, true)) {
+            LockSupport.park(this);
+            //这里如果其他线程中断了这个线程，则需要保存标志位，在后面恢复标志位
+            if (Thread.interrupted())
+                wasInterrupted = true;
+        }
+
+        waiters.remove();
+        if (wasInterrupted)
+            currentThread.interrupt();
+    }
+
+    public void unlock() {
+        locked.set(false);
+        //释放队首元素
+        LockSupport.unpark(waiters.peek());
+    }
+}
+```
+
+
+
+
+
+#### AQS
+
+##### AbstractQueuedSynchronizer类结构
+
+AQS即`AbstractQueuedSynchronizer`抽象同步队列。
+
+![](.\image\AQS类图结构.png)
+
+这张图是书里面截出来的，jdk13下面有点变化，但是主要的不变。
+
+
+
+总结一下：
+
+`AbstractQueuedSynchronizer`是一个FIFO的双向队列，关键的字段包括：
+
+`state`同步的状态		
+
+`tail`队尾元素
+
+`head`队首元素
+
+`xxxOffset`记录变量在类中的偏移位置
+
+
+
+`state`作为同步状态信息
+
+`private volatile int state;`
+
+`ReentrantLock`用来计算可重入次数，`ReentrantReadWriteLock`使用高16位来标识读状态（读锁次数），低16位标识获取写锁的可重入次数。
+
+对`state`的操作是同步的关键：
+
+- 独占方式下获取、释放资源：`acquire(int arg)`、`acquireInterruptibly(int arg)`、`release(int arg)`
+  - 如果其他线程尝试操作`state`的时候发现已经被锁定，进入阻塞状态。
+  - `ReentrantLock`作为独占锁。使用CAS操作`state`实现重入效果（+1、-1）
+
+- 共享方式下获取、释放资源：`acquireShared(int arg)`、`acquireSharedInterruptibly(int arg)`、`releaseShared(int arg)`
+  - 可以共享获取`state`变量
+  - `Semaphore`中，线程调用`acquire()`获取信号量的时候，会查看个数是否满足继续操作，满足则使用CAS自旋获取信号量。
+
+
+
+`Node`作为队列的节点：
+
+`SHARED`标记线程是获取共享资源的时候放到AQS队列
+
+`EXCLUSIVE`标记线程是获取独占资源的时候放入AQS队列
+
+`waitStatus`记录当前线程的等待状态：
+
+- `CANCELLED` 线程被取消 
+  - waitStatus value to indicate thread has cancelled.
+- `SIGNAL` 线程需要被唤醒 
+  - waitStatus value to indicate successor's thread needs unparking.
+- `CONDITION` 线程在条件队列里面等待：
+  - waitStatus value to indicate thread is waiting on condition.
+- `PROPAGATE` 释放共享资源需要通知其他节点 
+  - waitStatus value to indicate the next acquireShared should unconditionally propagate.
+
+
+
+AQS内部类`ConditionObject`包含了一个条件队列。
+
+
+
+##### 获取、释放资源
+
+```java
+    public final void acquire(int arg) {
+        //tryAcquire由具体实现类来完成
+       	//如果获取失败则入队，这里根据acquireQueued的结果的保留了中断标志位
+        //因为是独占锁，所以这里设置的mode=Node.EXLUSIVE
+        if (!tryAcquire(arg) &&
+            acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+            selfInterrupt();
+    }
+	
+	//比起acquire,会检测中断标志位
+	//如果被中断会直接抛出异常
+    public final void acquireInterruptibly(int arg)
+            throws InterruptedException {
+        if (Thread.interrupted())
+            throw new InterruptedException();
+        if (!tryAcquire(arg))
+            doAcquireInterruptibly(arg);
+    }
+
+    public final boolean release(int arg) {
+       	//tryRelease由具体锁实现
+        if (tryRelease(arg)) {
+            Node h = head;
+            if (h != null && h.waitStatus != 0)
+                unparkSuccessor(h);
+            return true;
+        }
+        return false;
+    }
+
+    public final void acquireShared(int arg) {
+        if (tryAcquireShared(arg) < 0)
+            doAcquireShared(arg);
+    }
+
+    public final boolean releaseShared(int arg) {
+        if (tryReleaseShared(arg)) {
+            doReleaseShared();
+            return true;
+        }
+        return false;
+    }
+	
+	//这个也需要在实现类里面做修改
+    protected boolean isHeldExclusively() {
+        throw new UnsupportedOperationException();
+    }
+```
+
+
+
+
+
+##### 入队操作
+
+```java
+	//线程获取锁失败以后转换为Node，插入到AQS阻塞队列中。
+	private Node enq(Node node) {
+        //循环，如果是空列则创建了在尾部插入
+        for (;;) {
+            Node oldTail = tail;
+            if (oldTail != null) {
+                //如果尾结点不是空，就把node的前置节点设为oldTail
+                //并使用cas设置node在尾部插入（设定为新的尾结点）
+                node.setPrevRelaxed(oldTail);
+                if (compareAndSetTail(oldTail, node)) {
+                    oldTail.next = node;
+                    return oldTail;
+                }
+            } else {
+                //空队列初始化
+                initializeSyncQueue();
+            }
+        }
+    }
+
+	//静态初始化：
+	//MethodHandles.Lookup l = MethodHandles.lookup();
+	//PREV = l.findVarHandle(Node.class, "prev", Node.class);
+	//可以看到操作的是Node类中的prev变量
+	private static final VarHandle PREV;
+	final void setPrevRelaxed(Node p) {
+    	PREV.set(this, p);
+	}
+	
+	//private static final VarHandle HEAD;
+	//HEAD = l.findVarHandle(AbstractQueuedSynchronizer.class, "head", Node.class);
+	private final void initializeSyncQueue() {
+        Node h;
+        if (HEAD.compareAndSet(this, null, (h = new Node())))
+            tail = h;
+    }
+```
+
+
+
+##### 条件变量
+
+条件变量使用`signal`与`await`配合锁来实现线程间同步的基础条件。
+
+常见的例子：
+
+```java
+        ReentrantLock lock = new ReentrantLock();
+        Condition condition1 = lock.newCondition();
+        Condition condition2 = lock.newCondition();
+
+		Thread A = new Thread(()->{
+            lock.lock();
+            try{
+                condition1.await();
+                condition2.signal();
+            }catch (Exception e){
+                e.printStackTrace();
+            }finally {
+                lock.unlock();
+            }
+        });
+```
+
+实际上，这里底层就是返回一个`ConditionObject`。
+
+
+
+
+
+
+
+
+
+
+
+
+
