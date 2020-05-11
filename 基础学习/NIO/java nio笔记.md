@@ -843,7 +843,7 @@ while(true){
 
 
 
-## 非阻塞服务器
+## 十. 非阻塞服务器
 
 作者的项目地址：https://github.com/jjenkov/java-nio-server.git
 
@@ -885,6 +885,89 @@ while(true){
 
 
 
-IO管道会把从流中读取的数据分割成连续的message。
+IO管道会把从流中读取的数据分割成连续的message，也就是下图`Message Reader`展示的过程。
 
 ![non-blocking-server-2](.\image\non-blocking-server-2.png)
+
+对于读数据分割（`Message Reader`）的这个过程：
+
+
+
+#### 阻塞IO管道
+
+一个阻塞IO管道可以像传统IO的`InputStream`那样直接从底层`Channel`获取数据并且阻塞直到有新的数据可以读取。这是一个简单的`Message Reader`实现，因为不用考虑无数据返回以及数据可能在之后被使用的情况。
+
+对应的`Message Writer`（类似的反向操作，把一系列数据写入流）也无需考虑部分数据写和写数据需要恢复的情况。
+
+
+
+存在的缺点：
+
+阻塞IO管道虽然实现简单，但是当一个线程去读取一个流数据的时候，这个线程就进入了阻塞状态。
+
+如果用于处理高并发的请求，那么每个请求都要对应一个线程，但是当服务器并发数达到百万的级别就会占据很大的内存（即使还没有开始处理请求，就需要很大的空间来声明这些线程）。
+
+> Each thread will take between 320K (32 bit JVM) and 1024K (64 bit JVM) memory for its stack. So, 1.000.000 threads will take 1 TB memory!
+
+可以使用线程池来进行缓冲，传入的请求进入队列中
+
+![non-blocking-server-3](.\image\non-blocking-server-3.png)
+
+但是如果很多连接请求都是无意义的，那么这些连接会长期占据线程。往往需要我们继续增加线程池的弹性，但如果这么做，就会继续陷入线程过多消耗内存的问题里面去。
+
+
+
+#### 基本非阻塞IO管道设计
+
+非阻塞IO管道可以使用单线程读取多个数据流，对应的流需要满足能够切换到非阻塞模式。
+
+没有数据可以读取返回0byte，否则返回就绪的数据。
+
+
+
+避免读取0byte的数据，我们使用`Selector`。`SelectableChannel`实例可以注册到`Selector`中，调用`Selector`的`select()` 或 `selectNow()` 时会返回有数据就绪的`SelectableChannel`。
+
+![non-blocking-server-4](.\image\non-blocking-server-4.png)
+
+读取部分的数据：
+
+当我们从`SelectableChannel`中读取数据块的时候，可能数据库（Data Block）会有下面的情况，我们不知道这是不是完整的数据：
+
+![non-blocking-server-5](.\image\non-blocking-server-5.png)
+
+
+
+需要进行的操作：
+
+- 识别完整的Message。
+- 对部分的Message存储直到读取到剩余数据。
+
+同时，为了避免混淆不同`Channel`的数据，需要每个`Channel`配置一个`Message Reader`
+
+![scatter](.\image\non-blocking-server-6.png)
+
+`Selector`获取到一个数据就绪的`Channel`之后，`Channel`关联的`Message Reader`开始读取数据并分割为Messages。读取到整个数据以后，就可以把数据通过管道传给下级组件。
+
+
+
+后面东西看不懂，以后看
+
+
+
+## 十一. DatagramChannel
+
+`DatagramChannel`是一个可以收发UDP数据包的`Channel`
+
+因为UDP是无连接网络协议，所以不能直接读写，相应的是收发数据包。
+
+
+
+### 打开DatagramChannel
+
+```java
+DatagramChannel channel = DatagramChannel.open();
+channel.socket().bind(new InetSocketAddress(9999));
+```
+
+
+
