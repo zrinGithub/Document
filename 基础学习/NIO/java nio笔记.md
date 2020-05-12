@@ -1,5 +1,9 @@
 # java NIO笔记
 
+[TOC]
+
+
+
 参考文档：
 
 [Java NIO Tutorial](http://tutorials.jenkov.com/java-nio/index.html)
@@ -970,4 +974,248 @@ channel.socket().bind(new InetSocketAddress(9999));
 ```
 
 
+
+### 接收数据
+
+```java
+ByteBuffer buf = ByteBuffer.allocate(48);
+buf.clear();
+
+channel.receive(buf);
+```
+
+`receive()`方法可以把`channel`中接收到的数据复制到`buffer`中。
+
+如果接收的数据包比程序制定的`buffer`更大，那么多余的数据会被丢弃。
+
+
+
+### 发送数据
+
+```java
+String newData = "New String to write to file..."
+                    + System.currentTimeMillis();
+    
+ByteBuffer buf = ByteBuffer.allocate(48);
+buf.clear();
+buf.put(newData.getBytes());
+buf.flip();
+
+int bytesSent = channel.send(buf, new InetSocketAddress(ipAddr, 80));
+```
+
+`channel`把`buffer`中的数据发送到制定IP地址和端口的服务器，因为UDP没有任何数据传输保证，所以这里没有任何监听或者回调操作可以完成。
+
+
+
+### 连接到一个特定的地址
+
+这里建立的连接并不是TCP那种真正的连接，只是锁定了你指定的`DatagramChannel`所以你只能通过设定的地址完成数据包收发。
+
+
+
+```java
+channel.connect(new InetSocketAddress(ipAddr, 80)); 
+//收发数据包
+int bytesRead = channel.read(buf); 
+int bytesWritten = channel.write(buf);
+```
+
+
+
+## 十二. Pipe
+
+`Java NIO Pipe`是两个线程间单向（`one-way`）的数据连接。
+
+Pipe向Sink Channel写数据，从Source Channel读取数据。
+
+
+
+![pipe-internals](.\image\pipe-internals.png)
+
+### 创建Pipe
+
+```java
+Pipe pipe = Pipe.open();
+```
+
+
+
+### 写数据到Pipe
+
+写数据需要与Sink Channel交互
+
+```java
+Pipe.SinkChannel sinkChannel = pipe.sink();
+
+//写数据到Channel
+String newData = "New String to write to file..." + System.currentTimeMillis();
+
+ByteBuffer buf = ByteBuffer.allocate(48);
+buf.clear();
+buf.put(newData.getBytes());
+//切换为读取模式
+buf.flip();
+
+while(buf.hasRemaining()) {
+    sinkChannel.write(buf);
+}
+```
+
+
+
+### 从Pipe读取数据
+
+读取数据需要和Source Channel交互：
+
+```java
+Pipe.SourceChannel sourceChannel = pipe.source();
+
+//读取数据
+ByteBuffer buf = ByteBuffer.allocate(48);
+int bytesRead = inChannel.read(buf);
+```
+
+
+
+## 十三. NIO与传统IO对比
+
+### 面向流 VS 面向缓冲
+
+传统IO面向流来读取数据的时候，不支持前后移动，我们只能自己建立缓存。
+
+NIO读取数据到Buffer中可以后续在进行处理，你可以前后移动数据指向（想一下position/limit/capacity/mark这些位置变量）。响应的处理流程变复杂了，我们需要检测是否完成buffer中所有数据的读取或者是否写入已满。
+
+
+### 阻塞与非阻塞
+
+传统IO设计中，Stream是阻塞的，当线程调用读写方法的时候，开始阻塞直到读取或者写入完成。
+
+
+
+NIO非阻塞模型可以支持一个线程通过Channle读取数据，在没有数据可读的时候，线程可以去完成其他任务。写数据的时候也可以不用等待数据写完就可以同时进行其他任务。一个线程也可以同时使用Selector管理多个Channel进行读写。
+
+
+
+### 对比数据处理过程
+
+有下面的数据需要读取：
+
+```
+Name: Anna
+Age: 25
+Email: anna@mailserver.com
+Phone: 1234567890
+```
+
+
+
+使用传统IO来进行处理：
+
+```java
+InputStream input = ... ; // get the InputStream from the client socket
+
+BufferedReader reader = new BufferedReader(new InputStreamReader(input));
+String nameLine   = reader.readLine();
+String ageLine    = reader.readLine();
+String emailLine  = reader.readLine();
+String phoneLine  = reader.readLine();
+```
+
+![nio-vs-io-1](.\image\nio-vs-io-1.png)
+
+使用Stream每次在一块数据读取完成后才会继续读取数据。
+
+
+
+
+
+使用NIOl来处理：
+
+```java
+ByteBuffer buffer = ByteBuffer.allocate(48);
+
+int bytesRead = inChannel.read(buffer);
+```
+
+调用read方法后，实际上并不知道是否已经读取完所有的数据。因此NIO的处理流程复杂一点，每次需要检测在buffer中的数据是否已经就绪了。
+
+
+
+![nio-vs-io-2](.\image\nio-vs-io-2.png)
+
+### 选择
+
+如果连接数较少且带宽都比较大，每次发送大量的数据，传统的IO设计更符合需求：
+
+![nio-vs-io-4](.\image\nio-vs-io-4.png)
+
+
+
+NIO中单线程能够操作多条Channel，但是转换数据的消耗可能比单线程阻塞读取数据更大。
+
+因此一般适用于连接数较大的情况。
+
+![nio-vs-io-3](.\image\nio-vs-io-3.png)
+
+
+
+## 十四. NIO Path
+
+`java.nio.file.Path`接口是jdk7新增的。
+
+实现类标识文件系统里的路径（文件或者文件夹，绝对路径或者相对路径）。
+
+在很多地方都可以替换`java.io.File`
+
+
+
+### 创建Path实例
+
+```java
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+public class PathExample {
+    public static void main(String[] args) {
+        Path path = Paths.get("c:\\data\\myfile.txt");
+    }
+}
+```
+
+get方法可以视为创建Path实例的工厂方法。
+
+
+
+### 创建绝对路径
+
+```java
+//windows \作为转义字符
+Path path = Paths.get("c:\\data\\myfile.txt");
+//linux 如果把这种格式用在windows下，会被理解为定位在C盘，也就是C:/home/jakobjenkov/myfile.txt
+Path path = Paths.get("/home/jakobjenkov/myfile.txt");
+```
+
+
+
+### 创建相对路径
+
+```java
+//第一个参数是绝对路径，第二个参数是相对路径
+Path projects = Paths.get("d:\\data", "projects");
+
+//下面的试了和文档，不知道是不是linux环境下才能用
+//当前路径
+Path file = Paths.get(".");
+//上层路径
+Path parentDir = Paths.get("..");
+```
+
+
+
+### normalize()
+
+```java
+
+```
 
