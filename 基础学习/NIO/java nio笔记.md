@@ -941,20 +941,178 @@ IO管道会把从流中读取的数据分割成连续的message，也就是下�
 
 
 
-需要进行的操作：
+`Message Reader`需要进行的操作：
 
 - 识别完整的Message。
+  - 需要`Message Reader`在`Data Block`中确定数据是不是包含完整的`Message`，这些信息之后会传到管道进行处理。因为识别完整性的处理非常频繁，所以对处理速度有要求。
 - 对部分的Message存储直到读取到剩余数据。
+
+
+
+
 
 同时，为了避免混淆不同`Channel`的数据，需要每个`Channel`配置一个`Message Reader`
 
 ![scatter](.\image\non-blocking-server-6.png)
 
-`Selector`获取到一个数据就绪的`Channel`之后，`Channel`关联的`Message Reader`开始读取数据并分割为Messages。读取到整个数据以后，就可以把数据通过管道传给下级组件。
+`Selector`获取到一个数据就绪的`Channel`之后，`Channel`关联的`Message Reader`开始读取数据并分割为Messages。读取并检测完成的数据（full message）以后，就可以把数据通过管道传给下级组件。
 
 
 
-后面东西看不懂，以后看
+`Message Reader`是协议相关的，它需要知道消息的格式。涉及到跨协议复用的情况，需要接入`Message Reader`的协议。比如说接收一个`Message Reader factory`作为配置的参数。
+
+
+
+### 保存部分消息（Storing Partial Massage）
+
+既然已经确定了由`Message Reader`来负责保存部分消息直到接收到完整的消息。我们需要考虑保存部分信息的实现。
+
+首先考虑这两个部分：
+
+- 尽量少的拷贝数据。复制越多，性能越低。
+- 完整的消息最好是以顺序字节（consecutive byte sequences）存储的，便于数据的解析。
+
+
+
+#### 为每个Message Reader分配Buffer（A Buffer Per Message Reader）
+
+不完整的消息（Partial Message）需要保存在buffer中。
+
+最直接的做法就是每个`Message Reader`内置一个buffer，buffer的大小需要满足存储最大可允许的消息。比如最大的消息是1MB，那么每个链接就应该维护一个1MB的buffer，可以想象如果连接数增大，会占据非常大的内存。
+
+
+
+#### 可变长Buffer
+
+还有一种可变长Buffer的方案，在每个`Message Reader`内置一个可变长Buffer，大小随着信息长度可以进行扩展。其大小只需要保证能够存储下一个消息就可以了。
+
+至于实现可变长的方案，可以考虑以下几种：
+
+
+
+##### 复制实现可变长（Resize by Copy）
+
+在开始的时候，buffer只申请少量的空间比如4KB，当消息的大小超过4KB之后，会申请更大的内存空间的buffer如8KB，然后把数据从4KB的buffer拷贝到8KB中。
+
+优点：消息中的数据被保存在了一个上个月顺序字节数组中，数据解析更方便。
+
+缺点：包含许多的数据复制操作。
+
+你可以通过分析消息流中大小来减少拷贝的操作。可以参考作者的文章：[Java Resizable Array](http://tutorials.jenkov.com/java-performance/resizable-array.html)
+
+
+
+##### 追加实现可变长（Resize by Append）
+
+这种方式维护一个包含多个数组的buffer，当你需要扩展buffer的时候只需要开辟一个新的字节数组用来存储。
+
+有两种实现的方式，区别不是太大：
+
+- 开辟独立字节数组，使用列表维护数组（二维数组）
+- 开辟一块较大的空间作为共享的数组，使用列表维护数组的切片。（指针数组）
+
+
+
+优点：没有数据复制操作
+
+缺点：不能顺序存储，解析的时候需要同时检测每个独立数组或者切片的位置，实现困难。
+
+
+
+#### TLV Encoded Messages
+
+有的协议中，消息格式会使用TLV（Type、Length、Value）格式编码。也就意味着，在消息的开始我们就知道了消息存储需要的大小，我们也就能够马上为此开辟准确的空间而避免浪费内存空间。
+
+------
+
+然而TLV格式也带来了一些问题，如果连接的速度太慢，而提前需要开辟的空间过大甚至占据所有内存，导致服务无响应。
+
+对应的变通方法就是在消息中包含多段的TLV信息，每个信息仅描述一段数据的大小。如果分段的消息数据量仍然过大还是会导致一样的问题。
+
+另外一种解决办法是设定超时时间，这可以让你的服务从偶发的并发大数据处理中恢复过来。但是还是可能停止响应，比如遭受到Dos（Denial of Service）的攻击。
+
+------
+
+TLV包含很多变形，使用多少字节来描述基本信息以及三种信息的位置（as. LTV）都有所不同。
+
+
+
+TLV是的内存管理更加容易，这也是HTTP 1.1显得不好并在HTTP 2.0中引入的原因。
+
+作者介绍了一个自己设计的包含TLV编码的网络协议：[VStack](http://vstack.co/)
+
+
+
+### 写部分消息（Writing Partial Message）
+
+向非阻塞IO管道中写数据是一个挑战性的工作。
+
+当你在非阻塞模式下调用`Channel.write(ByteBuffer)`的时候，无法确认是否写操作已经完成。需要持续查看数据的情况来确定所有的消息写入完成。
+
+
+
+为了管理向`Channel`中写部分消息，我们需要创建一个`Message Writer`。就像之前介绍的`Message Reader`一样，每个`Channel`关联一个`Message Writer`，并在每个`Message Writer`中，我们持续记录已经被写入的字节。
+
+为了避免大量数据到达`Message Writer`，超出其向`Channel`直接写入的量。可以在`Message Writer`中先把消息存储为队列，之后`Message Writer`会尽快把消息写入`Channel`。
+
+
+
+![non-blocking-server-8](.\image\non-blocking-server-8.png)
+
+为了能够发送完整的消息（在发送了一部分数据以后），`Message Writer`需要持续的调用写操作来完成数据的传输。
+
+------
+
+当你有了大量的连接的时候，你的`Message Writer`实例也会很多。检查像百万级别的`Message Writer`是否可写会耗费大量时间。
+
+考虑这些因素：许多`Message Writer`实例没有要发送的数据，并不需要检查。也有`Message Writer`不在可写的状态，我们不需要浪费时间向一个不能写入的`Channel`写数据。
+
+检查一个`Channel`是否可写，我们可以把`Channel`注册到`Selector`，但是不要把所有的`Channel`都注册到`Selector`。可以想象当你把大部分都是空闲的`Channel`注册到`Selector`，当调用`select()`方法的时候，因为有大量的`Channel`都是可写的，你需要检查所有空闲`Channel`对应的`Message Writer`是否有数据来写入。
+
+------
+
+为了避免检查所有的`Message Writer`实例，以及所有根本没有数据传输到的`Channel`实例，可以使用两个步骤：
+
+- 当消息写入`Message Writer`的时候，`Message Writer`注册自身的`Channel`到`Selector`。（如果之前没有注册的话）
+- 当服务空闲的时候，检查`Selecotr`注册的`Channel`是否可写，对于可写的`Channel`，`Message Writer`开始向`Channel`写数据，如果数据已经传输完成了，那么取消该`Channel`在`Selector`上面的注册。
+
+这两个步骤保证了只有**可写**且**有数据需要写入**的`Channel`才会注册到`Selector`。
+
+
+
+
+
+### 集成（Putting it All Together）
+
+可以看到，非阻塞服务需要不断检查传入的数据。当有接收到新的消息时，服务需要多次检查直到全部消息被接收完成（只检查一次是不够的）。
+
+同样，非阻塞服务需要不断检查是否有数据需要写。如果有的话，需要检查所有相应的连接是否处于可写。只在消息进入队列的时候检查是不足的，因为消息可能仅有部分写入。
+
+------
+
+一个非阻塞服务可以视为三个“管道”，并需要定期执行：
+
+- read pipeline：从打开的连接检查是否有新的数据。
+- process pipeline：处理接收到的完整消息。
+- write pipeline：检查打开的连接中是否有消息可以写入。
+
+这三个管道循环中重复的执行。你可以优化其执行，比如当没有消息在队列中的时候可以跳过write pipeline，如果没有接收到新的完整的数据可以跳过process pipeline。
+
+
+
+作者有对应的代码可以帮助理解：[java-nio-server](https://github.com/jjenkov/java-nio-server)
+
+![non-blocking-server-9](.\image\non-blocking-server-9.png)
+
+
+
+### 服务线程模型（Server Thread Model）
+
+在作者Github的源码中实现的非阻塞服务使用了包含两个线程的线程模型。
+
+第一条线程接收`ServerSocketChannel`中到达的连接。
+
+![non-blocking-server-10](.\image\non-blocking-server-10.png)
 
 
 
@@ -1204,7 +1362,6 @@ Path path = Paths.get("/home/jakobjenkov/myfile.txt");
 //第一个参数是绝对路径，第二个参数是相对路径
 Path projects = Paths.get("d:\\data", "projects");
 
-//下面的试了和文档，不知道是不是linux环境下才能用
 //当前路径
 Path file = Paths.get(".");
 //上层路径
@@ -1215,7 +1372,505 @@ Path parentDir = Paths.get("..");
 
 ### normalize()
 
+把路径转换为绝对路径格式
+
 ```java
+String originalPath = "d:\\data\\projects\\a-project\\..\\another-project";
+//d:\data\projects\a-project\..\another-project
+Path path1 = Paths.get(originalPath);
+//d:\data\projects\another-project
+Path path2 = path1.normalize();
 
 ```
+
+
+
+## 十五. Files
+
+`java.nio.file.Files`提供了很多在文件系统操作文件的方法，也是jdk1.7以后引入的。
+
+
+
+### exists
+
+`exists()`检测参数中的`Path`是否存在。
+
+```java
+Path path = Paths.get(".\\src");
+//Do not follow symbolic links.
+boolean exists1 = Files.exists(path, new LinkOption[]{LinkOption.NOFOLLOW_LINKS});
+```
+
+这里的第二个参数`LinkOption.NOFOLLOW_LINKS`表示检测的时候不包含符号链接文件（linux的symbolic links）。
+
+
+
+### createDirectory
+
+创建新的路径：
+
+```java
+Path path = Paths.get("data/subdir");
+
+try {
+    Path newDir = Files.createDirectory(path);
+} catch(FileAlreadyExistsException e){
+    // the directory already exists.
+} catch (IOException e) {
+    //something else went wrong
+    e.printStackTrace();
+}
+```
+
+抛出`IOException`可能是上级路径不存在。
+
+
+
+### copy
+
+复制文件到另外一个路径：
+
+```java
+Path sourcePath      = Paths.get("data/logging.properties");
+Path destinationPath = Paths.get("data/logging-copy.properties");
+
+try {
+    Files.copy(sourcePath, destinationPath);
+} catch(FileAlreadyExistsException e) {
+    //destination file already exists
+} catch (IOException e) {
+    //something else went wrong
+    e.printStackTrace();
+}
+```
+
+抛出`IOException`可能是文件的路径不存在。
+
+
+
+也可以通过添加方法参数强制**覆盖已经存在**的文件：
+
+```java
+Path sourcePath      = Paths.get("data/logging.properties");
+Path destinationPath = Paths.get("data/logging-copy.properties");
+
+try {
+    Files.copy(sourcePath, destinationPath, StandardCopyOption.REPLACE_EXISTING);
+} catch(FileAlreadyExistsException e) {
+    //destination file already exists
+} catch (IOException e) {
+    //something else went wrong
+    e.printStackTrace();
+}
+```
+
+
+
+### move
+
+`move`可以同时用于移动和重命名文件。
+
+```java
+Path sourcePath      = Paths.get("data/logging-copy.properties");
+Path destinationPath = Paths.get("data/subdir/logging-moved.properties");
+
+try {
+    //添加参数StandardCopyOption.REPLACE_EXISTING表示覆盖指定目标位置的文件
+    Files.move(sourcePath, destinationPath,
+            StandardCopyOption.REPLACE_EXISTING);
+} catch (IOException e) {
+    //moving file failed.
+    e.printStackTrace();
+}
+```
+
+
+
+### delete
+
+删除文件或者文件夹
+
+```java
+Path path = Paths.get("data/subdir/logging-moved.properties");
+
+try {
+    Files.delete(path);
+} catch (IOException e) {
+    //deleting file failed, 
+    //for instance: the file or directory does not exist), an IOException is thrown.
+    e.printStackTrace();
+}
+```
+
+
+
+	### walkFileTree
+
+用于递归遍历路径，`walkFilePath`接收`Path`实例和一个`FileViditor`作为参数。
+
+
+
+`FileVisitor`接口包含的方法在遍历路径的不同时期会被调用。
+
+```java
+public interface FileVisitor {
+
+    //在访问一个文件夹
+    public FileVisitResult preVisitDirectory(
+        Path dir, BasicFileAttributes attrs) throws IOException;
+
+    //遍历中访问每一个文件前时候调用
+    public FileVisitResult visitFile(
+        Path file, BasicFileAttributes attrs) throws IOException;
+
+    //遍历时访问文件失败的时候调用
+    public FileVisitResult visitFileFailed(
+        Path file, IOException exc) throws IOException;
+
+    //在遍历一个文件夹（包括遍历里面的文件）完成以后调用
+    public FileVisitResult postVisitDirectory(
+        Path dir, IOException exc) throws IOException {
+
+}
+```
+
+
+
+你需要自己实现`FileVisitor`接口，如果没有特殊的要求，可以使用官方的`SimpleFileVisitor`包含了很多默认的方法实现。
+
+下面是匿名类实现的`walkFileTree()`，每次调用只是打印信息到控制台：
+
+```java
+Files.walkFileTree(path, new FileVisitor<Path>() {
+  @Override
+  public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
+    System.out.println("pre visit dir:" + dir);
+    return FileVisitResult.CONTINUE;
+  }
+
+  @Override
+  public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+    System.out.println("visit file: " + file);
+    return FileVisitResult.CONTINUE;
+  }
+
+  @Override
+  public FileVisitResult visitFileFailed(Path file, IOException exc) throws IOException {
+    System.out.println("visit file failed: " + file);
+    return FileVisitResult.CONTINUE;
+  }
+
+  @Override
+  public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+    System.out.println("post visit directory: " + dir);
+    return FileVisitResult.CONTINUE;
+  }
+});
+```
+
+
+
+这里的每个方法返回`FileVisitResult`的枚举实例来决定方法怎么继续执行，包含这些选项：
+
+- `CONTINUE`：遍历继续执行
+- `TERMINATE`：遍历终止
+- `SKIP_SUBTREE`：遍历继续，但是不需要访问下一级路径。只在`preVisitDirectory`能够起到这个作用，否则会视为`CONTINUE`
+- `SKIP_SIBLINGS`：遍历继续，但是不会访问同一级的文件和文件夹，在`preVisitDirectory`中调用之后，对应的`postVisitDirectory`也不会调用。
+
+
+
+
+
+#### 应用：查询文件
+
+```java
+//指定查询的根路径
+Path rootPath = Paths.get("data");
+//指定查询的文件
+String fileToFind = File.separator + "README.txt";
+
+try {
+  Files.walkFileTree(rootPath, new SimpleFileVisitor<Path>() {
+	//使用SimpleFileVisitor并重写方法visitFile
+    //在访问文件的时候执行查询
+    @Override
+    public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+      String fileString = file.toAbsolutePath().toString();
+      //System.out.println("pathString = " + fileString);
+
+      if(fileString.endsWith(fileToFind)){
+        System.out.println("file found at path: " + file.toAbsolutePath());
+        return FileVisitResult.TERMINATE;
+      }
+      return FileVisitResult.CONTINUE;
+    }
+  });
+} catch(IOException e){
+    e.printStackTrace();
+}
+```
+
+
+
+
+
+#### 应用：递归删除文件
+
+`walkFileTree`可以用于删除一个文件夹下的所有文件和子文件夹。
+
+```java
+Path rootPath = Paths.get("data/to-delete");
+
+try {
+  Files.walkFileTree(rootPath, new SimpleFileVisitor<Path>() {
+    //实现visitFile方法，访问到一个文件就删除
+    @Override
+    public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+      System.out.println("delete file: " + file.toString());
+      Files.delete(file);
+      return FileVisitResult.CONTINUE;
+    }
+
+    //实现postVisitDirectory，访问文件夹完成后就删除
+    @Override
+    public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+      Files.delete(dir);
+      System.out.println("delete dir: " + dir.toString());
+      return FileVisitResult.CONTINUE;
+    }
+  });
+} catch(IOException e){
+  e.printStackTrace();
+}
+```
+
+
+
+### 其他
+
+还有很多其他方法：
+
+- `isHidden`
+- `readAllLines`
+- ......不想贴了，基本文件处理相关的都有，可以每次使用进去看一下
+
+
+
+
+
+## 十六. 异步文件通道(AsynchronousFileChannel)
+
+`AsynchronousFileChannel`是jdk7引入的，支持异步的读写数据到文件。
+
+
+
+### 创建
+
+```java
+Path path = Paths.get("data/test.xml");
+
+//读取方式打开指定文件
+AsynchronousFileChannel fileChannel =
+    AsynchronousFileChannel.open(path, StandardOpenOption.READ);
+```
+
+第一个参数结构指向文件路径的`Path`实例
+
+第二个参数是提供开启方式`StandardOpenOption`，包含下面这几种：
+
+- `READ`
+- `WRITE`
+- `APPEND`
+- `TRUNCATE_EXISTING`
+- `CREATE`
+- `CREATE_NEW`
+- `DELETE_ON_CLOSE`
+- `SPARSE`
+- `SYNC`
+- `DSYNC`
+
+
+
+### 读取数据
+
+`AsynchronousFileChannel`提供了两种`read()`方法使用不同方式读取文件。
+
+
+
+#### 通过Future读取数据
+
+```java
+//第一个参数ByteBuffer，channel会把读取的数据写入dst中
+//第二个参数是byte position指向文件数据的位置，表示文件开始读取的位置
+public abstract Future<Integer> read(ByteBuffer dst, long position);
+```
+
+这里的read方法可以马上返回（异步），需要调用`Future`的`isDone()`方法来检测读取操作是否已经完成。
+
+
+
+应用示例：
+
+```java
+AsynchronousFileChannel fileChannel = 
+    AsynchronousFileChannel.open(path, StandardOpenOption.READ);
+//buffer开辟空间
+ByteBuffer buffer = ByteBuffer.allocate(1024);
+//指定从文件开始的位置读取数据
+long position = 0;
+
+//异步读取文件
+Future<Integer> operation = fileChannel.read(buffer, position);
+
+//在完成读取之前等待
+while(!operation.isDone());
+
+//buffer切换为读模式
+buffer.flip();
+
+//输出
+byte[] data = new byte[buffer.limit()];
+buffer.get(data);
+System.out.println(new String(data));
+buffer.clear();
+```
+
+
+
+#### 通过CompletionHandler读取数据
+
+```java
+    public abstract <A> void read(ByteBuffer dst,
+                                  long position,
+                                  A attachment,
+                                  CompletionHandler<Integer,? super A> handler);
+```
+
+第一个参数是写入的buffer
+
+第二个参数是文件开始读取的位置
+
+第三个参数是
+
+第四个参数用于回调处理
+
+
+
+```java
+public interface CompletionHandler<V,A> {
+	void completed(V result, A attachment);
+	void failed(Throwable exc, A attachment);
+}
+```
+
+
+
+
+
+使用示例：
+
+```java
+fileChannel.read(buffer, position, buffer, new CompletionHandler<Integer, ByteBuffer>() {
+	//操作完成后回调
+    @Override
+    public void completed(Integer result, ByteBuffer attachment) {
+        System.out.println("result = " + result);
+		//操作buffere切换为读模式
+        attachment.flip();
+        byte[] data = new byte[attachment.limit()];
+        attachment.get(data);
+        System.out.println(new String(data));
+        attachment.clear();
+    }
+
+    //操作失败后回调
+    @Override
+    public void failed(Throwable exc, ByteBuffer attachment) {
+
+    }
+});
+```
+
+
+
+### 写数据
+
+#### 通过Future写数据
+
+```java
+Path path = Paths.get("data/test-write.txt");
+//如果文件不存在直接操作的会，会抛出 java.nio.file.NoSuchFileException 
+//所以这里先做验证
+if(!Files.exists(path)){
+    Files.createFile(path);
+}
+
+AsynchronousFileChannel fileChannel = 
+    AsynchronousFileChannel.open(path, StandardOpenOption.WRITE);
+
+ByteBuffer buffer = ByteBuffer.allocate(1024);
+long position = 0;
+//准备数据
+buffer.put("test data".getBytes());
+//切换为读模式
+buffer.flip();
+//向Channel中写数据
+Future<Integer> operation = fileChannel.write(buffer, position);
+buffer.clear();
+//等待读取数据完成
+while(!operation.isDone());
+
+System.out.println("Write done");
+```
+
+
+
+
+
+#### 通过CompletionHandler写数据
+
+```java
+Path path = Paths.get("data/test-write.txt");
+//验证文件是否存在
+if(!Files.exists(path)){
+    Files.createFile(path);
+}
+//写方式打开文件
+AsynchronousFileChannel fileChannel = 
+    AsynchronousFileChannel.open(path, StandardOpenOption.WRITE);
+//创建buffer，开辟空间
+ByteBuffer buffer = ByteBuffer.allocate(1024);
+//指定文件开始写入位置
+long position = 0;
+//buffer写入数据
+buffer.put("test data".getBytes());
+//buffer切换为读模式
+buffer.flip();
+//向channel写数据
+fileChannel.write(buffer, position, buffer, new CompletionHandler<Integer, ByteBuffer>() {
+    @Override
+    public void completed(Integer result, ByteBuffer attachment) {
+        System.out.println("bytes written: " + result);
+    }
+
+    @Override
+    public void failed(Throwable exc, ByteBuffer attachment) {
+        System.out.println("Write failed");
+        exc.printStackTrace();
+    }
+});
+```
+
+
+
+`write()`传入的attachment被作为参数在`CompletionHandler`的方法中使用。
+
+```java
+public interface CompletionHandler<V,A> {
+	void completed(V result, A attachment);
+	void failed(Throwable exc, A attachment);
+}
+```
+
+
 
