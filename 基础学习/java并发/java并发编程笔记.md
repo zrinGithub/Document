@@ -1483,7 +1483,21 @@ AQS即`AbstractQueuedSynchronizer`抽象同步队列。
 
 
 
-`Node`作为队列的节点：
+`Node`作为队列的节点，在通用的构造里面，会把当前线程封装到节点里面：
+
+```java
+ 		Node(Node nextWaiter) {
+            this.nextWaiter = nextWaiter;
+            //把当前线程作为参数封装
+            THREAD.set(this, Thread.currentThread());
+        }
+
+		//实际上设置的是Node里面的thread变量
+		private static final VarHandle THREAD;
+		THREAD = l.findVarHandle(Node.class, "thread", Thread.class);
+```
+
+
 
 `SHARED`标记线程是获取共享资源的时候放到AQS队列
 
@@ -1571,7 +1585,8 @@ AQS内部类`ConditionObject`包含了一个条件队列。
         for (;;) {
             Node oldTail = tail;
             if (oldTail != null) {
-                //如果尾结点不是空，就把node的前置节点设为oldTail
+                //如果尾结点不是空，就把node的前置节点设为oldTail  
+                //即：node.prev=oldTail
                 //并使用cas设置node在尾部插入（设定为新的尾结点）
                 node.setPrevRelaxed(oldTail);
                 if (compareAndSetTail(oldTail, node)) {
@@ -1629,17 +1644,392 @@ AQS内部类`ConditionObject`包含了一个条件队列。
         });
 ```
 
-实际上，这里底层就是返回一个`ConditionObject`。
+实际上，这里底层就是返回一个`ConditionObject`。AQS没有提供`newCondition()`，这是由`Lock`来定义的。
+
+
+
+------
+
+
+
+可以看到，这里的`await()`、`signal()`和`synchronized`的`wait()`、`notify`相似，但是AQS可以对应多个条件变量。
+
+
+
+我们看一下`AbstractQueuedSynchronizer`的内部类`ConditionObject`：
+
+每个`ConditionObject`维护了一个条件队列，当调用`await()`的时候，线程被放到条件队列。
+
+```java
+    public class ConditionObject implements Condition, java.io.Serializable {
+        private static final long serialVersionUID = 1173984872572414699L;
+        /** 队首 */
+        private transient Node firstWaiter;
+        /** 队尾 */
+        private transient Node lastWaiter;
+        
+        //调用await()方法时
+		public final void await() throws InterruptedException {
+            //检测中断位，对中断做出响应
+            if (Thread.interrupted())
+                throw new InterruptedException();
+            //创建新的node节点，放置到条件队列尾
+            Node node = addConditionWaiter();
+            //释放当前锁
+            int savedState = fullyRelease(node);
+            int interruptMode = 0;
+            //阻塞当前线程
+            while (!isOnSyncQueue(node)) {
+                LockSupport.park(this);
+                if ((interruptMode = checkInterruptWhileWaiting(node)) != 0)
+                    break;
+            }
+            if (acquireQueued(node, savedState) && interruptMode != THROW_IE)
+                interruptMode = REINTERRUPT;
+            if (node.nextWaiter != null) // clean up if cancelled
+                unlinkCancelledWaiters();
+            if (interruptMode != 0)
+                reportInterruptAfterWait(interruptMode);
+        }	
+        
+        //唤醒线程
+        public final void signal() {
+            if (!isHeldExclusively())
+                throw new IllegalMonitorStateException();
+            Node first = firstWaiter;
+            if (first != null)
+                //把条件队列队首位置的元素移动到AQS队列
+                doSignal(first);
+        }
+    }
+```
+
+
+
+**阻塞队列**：
+
+当多个线程同时使用`lock.lock()`获取锁的时候，只有一个线程能够拿到锁，其他线程被转换为Node节点插入AQS**阻塞队列**中，做CAS自旋尝试获取锁。
+
+
+
+**条件队列**：
+
+获取到锁的线程调用条件变量`await()`方法的时候，线程会释放获取的锁，转换为Node节点插入到条件变量对应的**条件队列**中。
+
+这个时候**阻塞队列**中的一个线程可以获取锁。
+
+
+
+如果一个线程调用了条件变量的`signal`或者`signalAll`方法，会把**条件队列**中的一个或者全部Node节点移动到AQS的**阻塞队列**中，尝试获取锁。
+
+
+
+#### 使用AQS自定义独占锁
+
+为了理解AQS在锁中的作用，这里展示基于AQS实现的不可重入的独占锁。
+
+```java
+public class NonReentrantLock implements Lock, Serializable {
+    //内部工具类，用于维护AQS队列数据
+    private static class Sync extends AbstractQueuedSynchronizer {
+        //state=0的时候，尝试获取锁
+        @Override
+        protected boolean tryAcquire(int arg) {
+            assert arg == 1;
+            if (compareAndSetState(0, 1)) {
+                //设置锁的拥有者为当前线程
+                setExclusiveOwnerThread(Thread.currentThread());
+                return true;
+            }
+            return false;
+        }
+
+        //尝试释放锁，设置state=0
+        @Override
+        protected boolean tryRelease(int arg) {
+            assert arg == 1;
+            //如果当前的状态是0，表示没有占有锁
+            //尝试释放锁抛出异常
+            if (getState() == 0)
+                throw new IllegalMonitorStateException();
+            //解除当前线程对锁的占有
+            setExclusiveOwnerThread(null);
+            setState(0);
+            return true;
+        }
+
+        //锁是否已经被持有
+        @Override
+        protected boolean isHeldExclusively() {
+            return getState() == 1;
+        }
+
+        //提供条件变量
+        public Condition newCondition() {
+            return new ConditionObject();
+        }
+    }
+
+    //创建AQS变量操作类Sync
+    private final Sync sync = new Sync();
+
+    @Override
+    public void lock() {
+        sync.acquire(1);
+    }
+
+    @Override
+    public void lockInterruptibly() throws InterruptedException {
+        sync.acquireInterruptibly(1);
+    }
+
+    @Override
+    public boolean tryLock() {
+        return sync.tryAcquire(1);
+    }
+
+    @Override
+    public boolean tryLock(long time, TimeUnit unit) throws InterruptedException {
+        return sync.tryAcquireNanos(1, unit.toNanos(time));
+    }
+
+    @Override
+    public void unlock() {
+        sync.release(1);
+    }
+
+    @Override
+    public Condition newCondition() {
+        return sync.newCondition();
+    }
+}
+```
+
+
+
+可以看出来，主要需要实现的是`tryAcquire`、`tryRelease`、`isHeldExclusively`的实现，也就是对AQS中`state`变量的操作。
 
 
 
 
 
+#### ReentrantLock原理
+
+
+
+![ReentrantLock类图结构](.\image\ReentrantLock类图结构.png)
+
+
+
+介绍一下这些类的作用（图从文档截下来的，与现在版本jdk13有点差异）：
+
+
+
+`ReentrantLock`实现了`Lock`接口，主要用于直接给外部提供锁的功能。
+
+
+
+`Sync`是`ReentrantLock`的内部类，实现了`AbstractQueuedSynchronizer`接口。
+
+重写了释放锁的`tryRelease`方法（释放锁和公平策略没有关系，所以直接在这里实现）
+
+这里对应AQS里面`state`表示线程获取锁的重入次数：
+
+- 首次成获取锁cas设置`state=1`，**设置锁的持有者为当前线程**
+- 该线程第二次获取锁，`state+=1`
+- 释放锁cas设置`state-=1`，只有减一后为0才让当前线程获取锁
+
+
+
+`NonfairSync`和`FairSync`分别实现了各自的`tryAcquire`方法，因为获取锁的时候考虑公平策略处理不同。
+
+
+
+下面看一下对应的源码。
+
+
+
+##### ReentrantLock构造器
+
+默认构造器是非公平锁，可以设置fair参数。
+
+```java
+    public ReentrantLock() {
+        sync = new NonfairSync();
+    }
+    public ReentrantLock(boolean fair) {
+        sync = fair ? new FairSync() : new NonfairSync();
+    }
+```
+
+
+
+##### lock()获取锁
+
+```java
+	public void lock() {
+        sync.acquire(1);
+    }
+```
+
+
+
+`Sync`实现的AQS，因此这里实际上就是调用`AbstractQueuedSynchronizer`的`acquire`方法。
+
+```java
+	public final void acquire(int arg) {
+        if (!tryAcquire(arg) &&
+            acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+            selfInterrupt();
+    }
+```
+
+
+
+可以看到，具体获取锁的实现还是在`NonfairSync`和`FairSync`中的`tryAcquire`方法：
+
+
+
+###### NonfairSync
+
+```java
+		//尝试获取锁
+		protected final boolean tryAcquire(int acquires) {
+            return nonfairTryAcquire(acquires);
+        }
+
+		//非公平锁的设计很简单，就是设置state的变量
+		@ReservedStackAccess
+        final boolean nonfairTryAcquire(int acquires) {
+            //获取当前线程
+            final Thread current = Thread.currentThread();
+            //获取state变量
+            int c = getState();
+            //state=0表示没有线程占有锁
+            if (c == 0) {
+                //cas设置state=1（这里的参数传过来是1）
+                if (compareAndSetState(0, acquires)) {
+                    //设置锁的持有者
+                    setExclusiveOwnerThread(current);
+                    return true;
+                }
+            }
+            //如果state!=0且当前线程就是锁的持有者，就把state变量增加后设置进去
+            else if (current == getExclusiveOwnerThread()) {
+                int nextc = c + acquires;
+                if (nextc < 0) // overflow
+                    throw new Error("Maximum lock count exceeded");
+                //只有当前线程在这个分支里面操作，所以不用使用cas
+                setState(nextc);
+                return true;
+            }
+            return false;
+        }
+```
+
+
+
+###### FairSync
+
+```java
+		@ReservedStackAccess
+        protected final boolean tryAcquire(int acquires) {
+            final Thread current = Thread.currentThread();
+            int c = getState();
+            //这里和非公平锁不同的是要使用hasQueuedPredecessors判断当前线程是不是排在队首的
+            if (c == 0) {
+                if (!hasQueuedPredecessors() &&
+                    compareAndSetState(0, acquires)) {
+                    setExclusiveOwnerThread(current);
+                    return true;
+                }
+            }
+            else if (current == getExclusiveOwnerThread()) {
+                int nextc = c + acquires;
+                if (nextc < 0)
+                    throw new Error("Maximum lock count exceeded");
+                setState(nextc);
+                return true;
+            }
+            return false;
+        }
+```
+
+
+
+公平锁主要不同的实现在于`hasQueuedPredecessors()`，这个方法用于检测当前线程是否排在阻塞队列的队首，是在`AbstractQueuedSynchronizer`里面实现的:
+
+```java
+    public final boolean hasQueuedPredecessors() {
+        Node h, s;
+        //检查阻塞队列是不是空
+        if ((h = head) != null) {
+            if ((s = h.next) == null || s.waitStatus > 0) {
+                s = null; // traverse in case of concurrent cancellation
+                //这里之所以要求小于等于0才确定，是为了避免CANCELLED =  1这种情况
+                for (Node p = tail; p != h && p != null; p = p.prev) {
+                    if (p.waitStatus <= 0)
+                        s = p;
+                }
+            }
+            //验证排在最前面的节点
+            if (s != null && s.thread != Thread.currentThread())
+                return true;
+        }
+        return false;
+    }
+```
+
+
+
+##### lockInterruptibly()获取锁
+
+```java
+    public void lockInterruptibly() throws InterruptedException {
+        sync.acquireInterruptibly(1);
+    }
+```
+
+
+
+`AbstractQueuedSynchronizer`：
+
+```java
+    public final void acquireInterruptibly(int arg)
+            throws InterruptedException {
+        //如果先后才能被中断，直接抛出异常
+        if (Thread.interrupted())
+            throw new InterruptedException();
+        //尝试获取资源
+        if (!tryAcquire(arg))
+            //调用AQS中的可以被中断的方法
+            doAcquireInterruptibly(arg);
+    }
+```
+
+
+
+##### tryLock()尝试获取锁
+
+尝试获取锁。
+
+如果当前锁没有被其他线程持有，则获取锁返回true，否则返回false。
+
+**方法不会引起当前线程阻塞。**
+
+```java
+    public boolean tryLock() {
+        return sync.nonfairTryAcquire(1);
+    }
+```
 
 
 
 
 
+```java
+
+```
 
 
 
