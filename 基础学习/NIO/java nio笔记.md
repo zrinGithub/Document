@@ -1112,6 +1112,8 @@ TLV是的内存管理更加容易，这也是HTTP 1.1显得不好并在HTTP 2.0�
 
 第一条线程接收`ServerSocketChannel`中到达的连接。
 
+另一个线程负责处理连接，包括读消息、处理消息，返回连接的响应。
+
 ![non-blocking-server-10](.\image\non-blocking-server-10.png)
 
 
