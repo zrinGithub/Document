@@ -810,6 +810,134 @@ if (binCount >= TREEIFY_THRESHOLD - 1) // -1 for 1st
 
 
 
+在看其他源码前，这三个操作为空：
+
+```java
+	// Callbacks to allow LinkedHashMap post-actions
+	void afterNodeAccess(Node<K,V> p) { }
+    void afterNodeInsertion(boolean evict) { }
+    void afterNodeRemoval(Node<K,V> p) { }
+```
+
+
+
+
+
+put：
+
+```java
+    public V put(K key, V value) {
+        return putVal(hash(key), key, value, false, true);
+    }
+
+	//获取hash值
+    static final int hash(Object key) {
+        int h;
+        return (key == null) ? 0 : (h = key.hashCode()) ^ (h >>> 16);
+    }
+
+    final V putVal(int hash, K key, V value, boolean onlyIfAbsent,
+                   boolean evict) {
+        Node<K,V>[] tab; Node<K,V> p; int n, i;
+        //如果长度为0，进行初始化
+        if ((tab = table) == null || (n = tab.length) == 0)
+            n = (tab = resize()).length;
+        //如果指定位置还没有对应元素，直接插入
+        if ((p = tab[i = (n - 1) & hash]) == null)
+            tab[i] = newNode(hash, key, value, null);
+        else {
+            //数组位置已经有元素了，则需要在链表后面插入
+            Node<K,V> e; K k;
+            //如果是指定的桶里面第一个元素hash和key相等，也就是需要修改的位置，直接指定e=第一个元素
+            if (p.hash == hash &&
+                ((k = p.key) == key || (key != null && key.equals(k))))
+                e = p;
+            //如果第一个元素不相等，需要判断是不是已经转换为树结构了
+            //需要在树里面做操作
+            else if (p instanceof TreeNode)
+                e = ((TreeNode<K,V>)p).putTreeVal(this, tab, hash, key, value);
+            else {
+                //如果是链表，需要在里面进行遍历，找到尾结点进行插入
+                for (int binCount = 0; ; ++binCount) {
+                    if ((e = p.next) == null) {
+                        p.next = newNode(hash, key, value, null);
+                        //如果长度已经大于8了，开始转换结构为红黑树
+                        if (binCount >= TREEIFY_THRESHOLD - 1) // -1 for 1st
+                            treeifyBin(tab, hash);
+                        break;
+                    }
+                    //如果找到key一样的数据，也就是修改的位置，直接返回
+                    //注意在前面循环判断里面已经设定了(e = p.next)
+                    if (e.hash == hash &&
+                        ((k = e.key) == key || (key != null && key.equals(k))))
+                        break;
+                    //继续向后面遍历
+                    p = e;
+                }
+            }
+            //找到了需要修改的位置
+            if (e != null) { // existing mapping for key
+                V oldValue = e.value;
+                //onlyIfAbsent=false的情况下或者存储的为空值（视为absent）的情况下修改值
+                if (!onlyIfAbsent || oldValue == null)
+                    e.value = value;
+                afterNodeAccess(e);
+                return oldValue;
+            }
+        }
+        //fail-fast机制
+        ++modCount;
+        //调整结构
+        if (++size > threshold)
+            resize();
+        afterNodeInsertion(evict);
+        return null;
+    }
+```
+
+这里**先进行插入再进行扩容**。
+
+
+
+get：
+
+```java
+    public V get(Object key) {
+        Node<K,V> e;
+        return (e = getNode(hash(key), key)) == null ? null : e.value;
+    }
+
+	final Node<K,V> getNode(int hash, Object key) {
+        Node<K,V>[] tab; Node<K,V> first, e; int n; K k;
+        //校验数组不是空，长度大于0，指定位置有元素
+        if ((tab = table) != null && (n = tab.length) > 0 &&
+            (first = tab[(n - 1) & hash]) != null) {
+            //就是第一个元素，直接返回
+            if (first.hash == hash && // always check first node
+                ((k = first.key) == key || (key != null && key.equals(k))))
+                return first;
+            if ((e = first.next) != null) {
+                //如果是红黑树，在树里面搜索
+                if (first instanceof TreeNode)
+                    return ((TreeNode<K,V>)first).getTreeNode(hash, key);
+                //如果是链表，在链表里面遍历
+                do {
+                    if (e.hash == hash &&
+                        ((k = e.key) == key || (key != null && key.equals(k))))
+                        return e;
+                } while ((e = e.next) != null);
+            }
+        }
+        return null;
+    }
+```
+
+
+
+
+
+
+
 #### 数据结构：树
 
 二叉查找树在特殊情况下会变成一条线性结构，和原先的链表存在一样的深度遍历问题，查找性能就会慢，
@@ -832,6 +960,12 @@ if (binCount >= TREEIFY_THRESHOLD - 1) // -1 for 1st
   像`HashMap`这样优化结构，每个桶里面加入链表结构
 
 
+
+
+
+
+
+#### ConcurrentHashMap源码解析
 
 
 
