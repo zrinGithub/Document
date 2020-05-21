@@ -165,6 +165,53 @@ public static void swap2(int a, int b){
 
  
 
+#### <? super E>和<? extends E>的区别
+
+指定的基类（E）都可以接受。
+
+`<? super E>`接收E的父类，既然父类也可以，子类也包含对应变量方法，所以子类其实也可以。
+
+`<? extends E>`只接收E的子类
+
+```java
+class Parent {
+}
+
+class Base extends Parent {
+}
+
+class Sub extends Base {
+}
+
+class Acceptor<E> {
+    public void sExtends(Collection<? extends E> c) {
+    }
+
+    public void sSuper(Collection<? super E> c) {
+    }
+}
+
+public class TestGeneric {
+    public static void main(String[] args) {
+        final Acceptor<Base> acceptor = new Acceptor<>();
+        //基类都可以满足
+        acceptor.sExtends(Arrays.asList(new Base()));
+        acceptor.sSuper(Arrays.asList(new Base()));
+        //<? extends E>只能适用子类
+        acceptor.sExtends(Arrays.asList(new Sub()));
+//        acceptor.sExtends(Arrays.asList(new Parent()));
+        //<? super E>可以使用所用相关
+        acceptor.sSuper(Arrays.asList(new Sub()));
+        acceptor.sSuper(Arrays.asList(new Parent()));
+    }
+
+}
+```
+
+
+
+
+
 ### 3. try-catch-finally
 
 #### try-catch-finally里面都有return，会返回什么？
