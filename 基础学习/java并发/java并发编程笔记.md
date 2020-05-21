@@ -1,8 +1,8 @@
 # Java并发编程笔记
 
-该文档为《Java并发编程之美》的读书笔记
+该文档为《Java并发编程之美》笔记
 
-
+部分算法图来自：[数据结构与算法系列](https://www.cnblogs.com/skywang12345/p/3603935.html)
 
 [TOC]
 
@@ -1505,14 +1505,18 @@ AQS即`AbstractQueuedSynchronizer`抽象同步队列。
 
 `waitStatus`记录当前线程的等待状态：
 
-- `CANCELLED` 线程被取消 
+正常的默认状态为0
+
+- `CANCELLED:1` 线程被取消 
   - waitStatus value to indicate thread has cancelled.
-- `SIGNAL` 线程需要被唤醒 
+- `SIGNAL:-1` 线程需要被唤醒 
   - waitStatus value to indicate successor's thread needs unparking.
-- `CONDITION` 线程在条件队列里面等待：
+- `CONDITION:-2` 线程在条件队列里面等待：
   - waitStatus value to indicate thread is waiting on condition.
-- `PROPAGATE` 释放共享资源需要通知其他节点 
+- `PROPAGATE:-3` 释放共享资源需要通知其他节点 
   - waitStatus value to indicate the next acquireShared should unconditionally propagate.
+
+
 
 
 
@@ -2025,10 +2029,944 @@ public class NonReentrantLock implements Lock, Serializable {
 
 
 
+这里调用的是`Sync`里面的方法，和前面非公平锁调用一致，区别在于`tryLock`直接返回`nonfairTryAcquire`的结果，而不会做后续的操作（把包含线程的节点加到阻塞队列里面去）：
+
+```java
+        @ReservedStackAccess
+        final boolean nonfairTryAcquire(int acquires) {
+            final Thread current = Thread.currentThread();
+            int c = getState();
+            //当前没有线程持有锁
+            if (c == 0) {
+                if (compareAndSetState(0, acquires)) {
+                    setExclusiveOwnerThread(current);
+                    return true;
+                }
+            }
+            //持有锁的是当前线程，可重入直接操作state+1（acquire）
+            else if (current == getExclusiveOwnerThread()) {
+                int nextc = c + acquires;
+                if (nextc < 0) // overflow
+                    throw new Error("Maximum lock count exceeded");
+                setState(nextc);
+                return true;
+            }
+            return false;
+        }
+```
+
+
+
+##### tryLock(long timeout, TimeUnit unit)
+
+`ReentranLock`里面的方法：
+
+```java
+	//如果超时时间到了没有获取该锁则返回false
+	public boolean tryLock(long timeout, TimeUnit unit)
+            throws InterruptedException {
+        return sync.tryAcquireNanos(1, unit.toNanos(timeout));
+    }
+```
+
+
+
+
+
+##### unlock()释放锁
+
+```java
+	//释放锁
+	public void unlock() {
+        sync.release(1);
+    }
+	
+	//AQS里面的方法
+    public final boolean release(int arg) {
+        if (tryRelease(arg)) {
+            Node h = head;
+            //释放完成之后，检查队列是否还有元素
+            //如果有元素而且waitStatus!=0则唤醒该线程
+            if (h != null && h.waitStatus != 0)
+                unparkSuccessor(h);
+            return true;
+        }
+        return false;
+    }
+
+		//释放可重入锁，需要把state-1，如果操作后为0,释放当前线程持有锁
+		@ReservedStackAccess
+        protected final boolean tryRelease(int releases) {
+            int c = getState() - releases;
+            if (Thread.currentThread() != getExclusiveOwnerThread())
+                throw new IllegalMonitorStateException();
+            boolean free = false;
+            if (c == 0) {
+                free = true;
+                setExclusiveOwnerThread(null);
+            }
+            setState(c);
+            return free;
+        }
+```
+
+
+
+### 并发队列
+
+#### ConcurrentLinkedQueue
+
+特点：使用cas非阻塞实现。
+
+
+
+内部是一个单向的链表。
+
+
+
+##### offer操作
+
+```java
+    public boolean offer(E e) {
+        checkNotNull(e);
+        final Node<E> newNode = new Node<E>(e);
+
+        for (Node<E> t = tail, p = t;;) {
+            Node<E> q = p.next;
+            if (q == null) {
+                // p is last node
+                if (p.casNext(null, newNode)) {
+                    // Successful CAS is the linearization point
+                    // for e to become an element of this queue,
+                    // and for newNode to become "live".
+                    if (p != t) // hop two nodes at a time
+                        casTail(t, newNode);  // Failure is OK.
+                    return true;
+                }
+                // Lost CAS race to another thread; re-read next
+            }
+            else if (p == q)
+                // We have fallen off list.  If tail is unchanged, it
+                // will also be off-list, in which case we need to
+                // jump to head, from which all live nodes are always
+                // reachable.  Else the new tail is a better bet.
+                p = (t != (t = tail)) ? t : head;
+            else
+                // Check for tail updates after two hops.
+                p = (p != t && t != (t = tail)) ? t : q;
+        }
+    }
+```
+
+注释还是比较详细，不一定每次操作结束head都指向头结点，tail都指向尾结点。
+
+每次完成结点插入后，会判端`p!=t`然后更新尾结点。
+
+
+
+`p==q`是在进行`poll`后面可能出现tail自己指向自己的结果（就是`tail.next=null`）,所以需要把p指向头结点head。
+
+像`peek`这种操作只是获取队列头数据，和`poll`类似。
+
+
+
+##### poll操作
+
+```java
+    public E poll() {
+        restartFromHead:
+        for (;;) {
+            for (Node<E> h = head, p = h, q;;) {
+                E item = p.item;
+
+                if (item != null && p.casItem(item, null)) {
+                    // Successful CAS is the linearization point
+                    // for item to be removed from this queue.
+                    if (p != h) // hop two nodes at a time
+                        updateHead(h, ((q = p.next) != null) ? q : p);
+                    return item;
+                }
+                else if ((q = p.next) == null) {
+                    updateHead(h, p);
+                    return null;
+                }
+                else if (p == q)
+                    continue restartFromHead;
+                else
+                    p = q;
+            }
+        }
+    }
+```
+
+
+
+
+
+#### LinkedBlockingQueue
+
+有界队列，使用单向链表来实现，使用两个Node存储头尾结点
+
+```java
+    public LinkedBlockingQueue(int capacity) {
+        if (capacity <= 0) throw new IllegalArgumentException();
+        this.capacity = capacity;
+        last = head = new Node<E>(null);
+    }
+```
+
+
+
+
+
+一些关键的变量写在下面：
+
+```java
+    /** Current number of elements */
+    private final AtomicInteger count = new AtomicInteger();
+
+    /** Lock held by take, poll, etc */
+    private final ReentrantLock takeLock = new ReentrantLock();
+
+    /** Wait queue for waiting takes */
+    private final Condition notEmpty = takeLock.newCondition();
+
+    /** Lock held by put, offer, etc */
+    private final ReentrantLock putLock = new ReentrantLock();
+
+    /** Wait queue for waiting puts */
+    private final Condition notFull = putLock.newCondition();
+```
+
+两个`ReentrantLock`负责出队（poll）和入队（offer）,各维护一个条件变量，用于入队的时候判断是否已满，出队的时候判断是否已空。也就是生产者-消费者的模型：
+
+
+
+
+
+##### offer与put操作
+
+`offer`是非阻塞的操作：
+
+```java
+    public boolean offer(E e) {
+        if (e == null) throw new NullPointerException();
+        final AtomicInteger count = this.count;
+        //如果已经超出容量，直接返回false
+        if (count.get() == capacity)
+            return false;
+        final int c;
+        final Node<E> node = new Node<E>(e);
+        final ReentrantLock putLock = this.putLock;
+        //获取入队锁
+        putLock.lock();
+        try {
+            //再次判断是否超出容量
+            if (count.get() == capacity)
+                return false;
+            //入队操作
+            enqueue(node);
+            //获取并将count值递增
+            c = count.getAndIncrement();
+            //递增之后还有容量，使用条件变量唤醒条件队列中的阻塞线程
+            if (c + 1 < capacity)
+                notFull.signal();
+        } finally {
+            //释放锁
+            putLock.unlock();
+        }
+        //至少有一个元素（刚插入的），获取出队锁，使用条件变量唤醒阻塞线程
+        if (c == 0)
+            signalNotEmpty();
+        return true;
+    }
+
+	private void enqueue(Node<E> node) {
+        // assert putLock.isHeldByCurrentThread();
+        // assert last.next == null;
+        last = last.next = node;
+    }
+
+    private void signalNotEmpty() {
+        final ReentrantLock takeLock = this.takeLock;
+        takeLock.lock();
+        try {
+            notEmpty.signal();
+        } finally {
+            takeLock.unlock();
+        }
+    }
+```
+
+`offer`也有一个包含等待时长的重载，在队列已满的情况下不会马上返回，而是等待指定时间后再次判断：
+
+```java
+            while (count.get() == capacity) {
+                if (nanos <= 0L)
+                    return false;
+                nanos = notFull.awaitNanos(nanos);
+            }
+```
+
+
+
+
+
+`put`操作与此类似，但是发现队列满会使用条件变量等待进入阻塞状态。
+
+```java
+			//循环判定避免虚假唤醒的情况
+			while (count.get() == capacity) {
+                notFull.await();
+            }
+```
+
+
+
+
+
+##### poll、take、peek操作
+
+`poll`操作也是非阻塞的:
+
+```java
+    public E poll() {
+        final AtomicInteger count = this.count;
+        //如果没有元素了，直接返回false
+        if (count.get() == 0)
+            return null;
+        final E x;
+        final int c;
+        final ReentrantLock takeLock = this.takeLock;
+        //获取出队锁
+        takeLock.lock();
+        try {
+            //再次判断
+            if (count.get() == 0)
+                return null;
+            //出队拿到旧元素
+            x = dequeue();
+            //获取并cas递减count
+            c = count.getAndDecrement();
+            //还有元素，条件变量唤醒阻塞线程
+            if (c > 1)
+                notEmpty.signal();
+        } finally {
+            //释放锁
+            takeLock.unlock();
+        }
+        //队列已经不再是满的（上面的操作移除了一个），通知阻塞队列
+        if (c == capacity)
+            //这里就是获取入队锁然后唤醒notFull，代码不贴了
+            signalNotFull();
+        return x;
+    }
+
+    private E dequeue() {
+        // assert takeLock.isHeldByCurrentThread();
+        // assert head.item == null;
+        Node<E> h = head;
+        Node<E> first = h.next;
+        //自引用通知gc回收
+        h.next = h; // help GC
+        //头结点换位oldhead.next
+        head = first;
+        //这里的头结点是一个哨兵的概念，所以不存储值
+        E x = first.item;
+        first.item = null;
+        return x;
+    }
+```
+
+其中，`poll(long timeout, TimeUnit unit)`的重载在获取锁之后才进行循环判断：
+
+```java
+            while (count.get() == 0) {
+                if (nanos <= 0L)
+                    return null;
+                nanos = notEmpty.awaitNanos(nanos);
+            }
+```
+
+
+
+`take`是阻塞版本的出队操作：
+
+```java
+    public E take() throws InterruptedException {
+        final E x;
+        final int c;
+        final AtomicInteger count = this.count;
+        final ReentrantLock takeLock = this.takeLock;
+        //获取锁，会响应中断
+        takeLock.lockInterruptibly();
+        try {
+            //循环判断避免虚假唤醒
+            while (count.get() == 0) {
+                notEmpty.await();
+            }
+            //出队操作
+            x = dequeue();
+            //获取并使用cas递减
+            c = count.getAndDecrement();
+            //如果还有元素（出队后count=1之后递减就是0）
+            if (c > 1)
+                notEmpty.signal();
+        } finally {
+            takeLock.unlock();
+        }
+        //如果队列非空
+        if (c == capacity)
+            signalNotFull();
+        return x;
+    }
+```
+
+
+
+`peek`的操作只是取元素，所以比较简单：
+
+```java
+    public E peek() {
+        final AtomicInteger count = this.count;
+        if (count.get() == 0)
+            return null;
+        final ReentrantLock takeLock = this.takeLock;
+        takeLock.lock();
+        try {
+            return (count.get() > 0) ? head.next.item : null;
+        } finally {
+            takeLock.unlock();
+        }
+    }
+```
+
+
+
+##### remove操作
+
+`remove`操作比较特殊（实际上队列的特点本来就没有这种操作），因为需要保证操作过程没有其他的线程修改队列，所以需要获取入队锁和出队锁：
+
+```java
+    public boolean remove(Object o) {
+        if (o == null) return false;
+        fullyLock();
+        try {
+            for (Node<E> pred = head, p = pred.next;
+                 p != null;
+                 pred = p, p = p.next) {
+                if (o.equals(p.item)) {
+                    //找到元素后，把对应元素移除，
+                    //因为是单向链表，所以这里需要传递前一个值
+                    unlink(p, pred);
+                    return true;
+                }
+            }
+            return false;
+        } finally {
+            fullyUnlock();
+        }
+    }
+
+    void unlink(Node<E> p, Node<E> pred) {
+        // assert putLock.isHeldByCurrentThread();
+        // assert takeLock.isHeldByCurrentThread();
+        // p.next is not changed, to allow iterators that are
+        // traversing p to maintain their weak-consistency guarantee.
+        p.item = null;
+        //改变执行
+        pred.next = p.next;
+        //如果需要修改尾结点
+        if (last == p)
+            last = pred;
+        //如果非满，通知需要入队的阻塞线程
+        if (count.getAndDecrement() == capacity)
+            notFull.signal();
+    }
+```
+
+
+
+#### ArrayBlockingQueue
+
+`ArrayBlockingQueue`是一个有界数组实现的阻塞队列。
+
+
+
+下面是一些重要的变量：
+
+```java
+    /** The queued items */
+    final Object[] items;
+
+    /** items index for next take, poll, peek or remove */
+    int takeIndex;
+
+    /** items index for next put, offer, or add */
+    int putIndex;
+
+    /** Number of elements in the queue */
+    int count;
+
+    /** Main lock guarding all access */
+    final ReentrantLock lock;
+
+    /** Condition for waiting takes */
+    private final Condition notEmpty;
+
+    /** Condition for waiting puts */
+    private final Condition notFull;
+```
+
+
+
+
+
+构造器里面设定了范围，默认lock是非公平锁：
+
+```java
+    public ArrayBlockingQueue(int capacity, boolean fair) {
+        if (capacity <= 0)
+            throw new IllegalArgumentException();
+        this.items = new Object[capacity];
+        lock = new ReentrantLock(fair);
+        notEmpty = lock.newCondition();
+        notFull =  lock.newCondition();
+    }
+```
+
+
+
+##### offer与put操作
+
+`offer`非阻塞操作：
+
+```java
+    public boolean offer(E e) {
+        Objects.requireNonNull(e);
+        final ReentrantLock lock = this.lock;
+        //获取锁
+        lock.lock();
+        try {
+            //数组已满，直接返回
+            if (count == items.length)
+                return false;
+            else {
+                //入队操作
+                enqueue(e);
+                return true;
+            }
+        } finally {
+            //释放锁
+            lock.unlock();
+        }
+    }
+
+	private void enqueue(E e) {
+        // assert lock.isHeldByCurrentThread();
+        // assert lock.getHoldCount() == 1;
+        // assert items[putIndex] == null;
+        final Object[] items = this.items;
+        //这里putIndex存储了入队的数组下标
+        items[putIndex] = e;
+        //入队下标+1，如果数组已满，入队下标置零
+        if (++putIndex == items.length) putIndex = 0;
+        //count记录元素个数
+        count++;
+        //非空通知
+        notEmpty.signal();
+    }
+```
+
+重载版本`offer(E e, long timeout, TimeUnit unit)`获取锁后，即使队列已满也会阻塞指定时间：
+
+```java
+		//因为是阻塞的，所以需要对中断做出响应
+		lock.lockInterruptibly();
+		......
+		try {
+            while (count == items.length) {
+                if (nanos <= 0L)
+                    return false;
+                nanos = notFull.awaitNanos(nanos);
+            }
+```
+
+
+
+
+
+
+
+`put`阻塞操作：
+
+```java
+    public void put(E e) throws InterruptedException {
+        Objects.requireNonNull(e);
+        final ReentrantLock lock = this.lock;
+        //响应中断获取锁
+        lock.lockInterruptibly();
+        try {
+           	//循环判定避免虚假唤醒
+            while (count == items.length)
+                //不满足条件一直阻塞，等待notFull.signal/signalAll
+                notFull.await();
+            enqueue(e);
+        } finally {
+            lock.unlock();
+        }
+    }
+```
+
+
+
+
+
+##### poll、take、peek操作
+
+`poll`非阻塞操作：
+
+```java
+    public E poll() {
+        final ReentrantLock lock = this.lock;
+        lock.lock();
+        try {
+            return (count == 0) ? null : dequeue();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private E dequeue() {
+        // assert lock.isHeldByCurrentThread();
+        // assert lock.getHoldCount() == 1;
+        // assert items[takeIndex] != null;
+        final Object[] items = this.items;
+        //takeIndex作为出队的下标，可以直接返回指定位置的数据
+        @SuppressWarnings("unchecked")
+        E e = (E) items[takeIndex];
+        //出队位置置空
+        items[takeIndex] = null;
+        //出队后下标递增，如果已经到了最大值，直接置零
+        if (++takeIndex == items.length) takeIndex = 0;
+        count--;
+        if (itrs != null)
+            itrs.elementDequeued();
+        //出队后进行非满通知
+        notFull.signal();
+        return e;
+    }
+```
+
+
+
+`take`阻塞操作：
+
+```java
+    public E take() throws InterruptedException {
+        final ReentrantLock lock = this.lock;
+        //阻塞操作要对中断做出响应
+        lock.lockInterruptibly();
+        try {
+            //循环判定避免虚假唤醒
+            while (count == 0)
+                notEmpty.await();
+            return dequeue();
+        } finally {
+            lock.unlock();
+        }
+    }
+```
+
+
+
+`peek`非阻塞操作：
+
+```java
+    public E peek() {
+        final ReentrantLock lock = this.lock;
+        lock.lock();
+        try {
+            return itemAt(takeIndex); // null when queue is empty
+        } finally {
+            lock.unlock();
+        }
+    }
+```
+
+
+
+#### PriorityBlockingQueue
+
+`PriorityBlockingQueue`是带有**优先级**的**无界**、**阻塞**队列。
+
+
+
+底层使用数组`queue`维护：
+
+```java
+	//底层数组
+	private transient Object[] queue;
+
+    //队列元素的个数
+    private transient int size;
+
+	private transient Comparator<? super E> comparator;
+
+	private final ReentrantLock lock = new ReentrantLock();
+
+	private final Condition notEmpty = lock.newCondition();
+```
+
+因为设计是无界的，所以这里没有之前类似`notFull`的条件变量。
+
+
+
+如果需要有优先级，需要在构造器传递比较器（默认是null）。
+
+```java
+    public PriorityBlockingQueue(int initialCapacity,
+                                 Comparator<? super E> comparator) {
+        if (initialCapacity < 1)
+            throw new IllegalArgumentException();
+        //传递的比较器，父类的比较器也可以传递进来
+        this.comparator = comparator;
+        //
+        this.queue = new Object[Math.max(1, initialCapacity)];
+    }
+```
+
+
+
+##### offer操作
+
+因为是无界队列，所以是阻塞操作。
+
+```java
+ public boolean offer(E e) {
+        if (e == null)
+            throw new NullPointerException();
+        final ReentrantLock lock = this.lock;
+        //获取锁
+        lock.lock();
+        int n, cap;
+        Object[] es;
+        //元素个数大于当前队列长度
+        while ((n = size) >= (cap = (es = queue).length))
+            //尝试扩容
+            tryGrow(es, cap);
+        try {
+            final Comparator<? super E> cmp;
+            if ((cmp = comparator) == null)
+                siftUpComparable(n, e, es);
+            else
+                siftUpUsingComparator(n, e, es, cmp);
+            //队列元素增加1
+            size = n + 1;
+            //通知当前队列非空
+            notEmpty.signal();
+        } finally {
+            //释放独占锁
+            lock.unlock();
+        }
+        return true;
+    }
+
+	private static final VarHandle ALLOCATIONSPINLOCK;
+	ALLOCATIONSPINLOCK = l.findVarHandle(PriorityBlockingQueue.class,
+    	"allocationSpinLock",
+        int.class);
+
+    private void tryGrow(Object[] array, int oldCap) {
+        //扩容比较小耗时间，所以先释放锁
+        lock.unlock(); // must release and then re-acquire main lock
+        Object[] newArray = null;
+        
+        //CAS成功则扩容
+        if (allocationSpinLock == 0 &&
+            ALLOCATIONSPINLOCK.compareAndSet(this, 0, 1)) {
+            try {
+                int newCap = oldCap + ((oldCap < 64) ?
+                                       (oldCap + 2) : // grow faster if small
+                                       (oldCap >> 1));
+                if (newCap - MAX_ARRAY_SIZE > 0) {    // possible overflow
+                    int minCap = oldCap + 1;
+                    if (minCap < 0 || minCap > MAX_ARRAY_SIZE)
+                        throw new OutOfMemoryError();
+                    newCap = MAX_ARRAY_SIZE;
+                }
+                if (newCap > oldCap && queue == array)
+                    newArray = new Object[newCap];
+            } finally {
+                allocationSpinLock = 0;
+            }
+        }
+        //cas操作失败的线程会让出CPU
+        if (newArray == null) // back off if another thread is allocating
+            Thread.yield();
+        //重新获取锁
+        lock.lock();
+        //如果扩容完成了，需要把queue指向新的数组
+        if (newArray != null && queue == array) {
+            queue = newArray;
+            //数据拷贝
+            System.arraycopy(array, 0, newArray, 0, oldCap);
+        }
+    }
+```
+
+
+
+
+
+底层是一个二叉堆的结构，所以每次需要和跟节点比较：
+
+![最大堆的添加操作](.\image\最大堆的添加操作.jpg)
+
+此图是最大堆的添加操作，这里是一个最小堆，也就是找到比现在插入节点数据小的位置就停止。
+
+```java
+   
+
+	//传入的参数 k=size 队列元素个数，也就是队尾
+	//x插入的元素
+	//es = queue
+    private static <T> void siftUpComparable(int k, T x, Object[] es) {
+        //直接向上转型
+        Comparable<? super T> key = (Comparable<? super T>) x;
+        //指定位置>0
+        while (k > 0) {
+            //(k - 1) >>> 1 -> (k - 1)/2，得到父节点的位置
+            int parent = (k - 1) >>> 1;
+            //拿到父节点的数据
+            Object e = es[parent];
+            //如果满足位置（父节点小于当前节点），直接退出
+            if (key.compareTo((T) e) >= 0)
+                break;
+            //如果需要调换位置，把当前位置的数据换为父节点，然后k指向父节点的位置
+            es[k] = e;
+            k = parent;
+        }
+        //在指定位置k设置数据
+        es[k] = key;
+    }
+
+    private static <T> void siftUpUsingComparator(
+        int k, T x, Object[] es, Comparator<? super T> cmp) {
+        while (k > 0) {
+            //(k - 1) >>> 1 -> (k - 1)/2
+            int parent = (k - 1) >>> 1;
+            Object e = es[parent];
+            //包含了比较器的情况，直接调用比较器的方法
+            if (cmp.compare(x, (T) e) >= 0)
+                break;
+            es[k] = e;
+            k = parent;
+        }
+        es[k] = x;
+    }
+```
+
+
+
+##### poll操作
+
+获取根节点元素（最小的值）
+
+```java
+    public E poll() {
+        final ReentrantLock lock = this.lock;
+        lock.lock();
+        try {
+            return dequeue();
+        } finally {
+            lock.unlock();
+        }
+    }
+```
+
 
 
 ```java
+    private E dequeue() {
+        // assert lock.isHeldByCurrentThread();
+        final Object[] es;
+        final E result;
 
+        //直接获取队列中第一个位置
+        if ((result = (E) ((es = queue)[0])) != null) {
+            final int n;
+            //数量-1，拿出末尾的元素，因为
+            final E x = (E) es[(n = --size)];
+            //末尾元素置空，实际上就是元素数组减少一个元素后大小减1
+            es[n] = null;
+            //如果还剩下元素，则需要进行最小堆的重新结构化
+            if (n > 0) {
+                final Comparator<? super E> cmp;
+                if ((cmp = comparator) == null)
+                    siftDownComparable(0, x, es, n);
+                else
+                    siftDownUsingComparator(0, x, es, n, cmp);
+            }
+        }
+        return result;
+    }
+```
+
+
+
+最小堆删除元素的时候，不能直接用子节点代替父节点，因为无法保证完成后依然是最小堆，
+
+所以需要把末尾元素替换根节点，通过比较向下移动：
+
+![](.\image\最大堆的删除操作.jpg)
+
+这个图展示是最大堆的操作。
+
+
+
+```java
+	//k=0  	指向末尾元素的位置（一开始使用末尾的元素来代替被移除的根节点）
+	//x 	末尾元素
+	//es	移除根节点后的数组（这里状态只是删除了尾结点）
+	//n		当前元素个数
+	private static <T> void siftDownComparable(int k, T x, Object[] es, int n) {
+        // assert n > 0;
+        Comparable<? super T> key = (Comparable<? super T>)x;
+        int half = n >>> 1;           // loop while a non-leaf
+        while (k < half) {
+            int child = (k << 1) + 1; // assume left child is least
+            Object c = es[child];
+            int right = child + 1;
+            if (right < n &&
+                ((Comparable<? super T>) c).compareTo((T) es[right]) > 0)
+                c = es[child = right];
+            if (key.compareTo((T) c) <= 0)
+                break;
+            es[k] = c;
+            k = child;
+        }
+        es[k] = key;
+    }
+
+	//区别就在于使用了设定的比较器
+    private static <T> void siftDownUsingComparator(
+        int k, T x, Object[] es, int n, Comparator<? super T> cmp) {
+        // assert n > 0;
+        int half = n >>> 1;
+        while (k < half) {
+            int child = (k << 1) + 1;
+            Object c = es[child];
+            int right = child + 1;
+            if (right < n && cmp.compare((T) c, (T) es[right]) > 0)
+                c = es[child = right];
+            if (cmp.compare(x, (T) c) <= 0)
+                break;
+            es[k] = c;
+            k = child;
+        }
+        es[k] = x;
+    }
 ```
 
 
