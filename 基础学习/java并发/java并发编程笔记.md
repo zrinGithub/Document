@@ -2738,9 +2738,9 @@ public class NonReentrantLock implements Lock, Serializable {
 
 
 
-##### offer操作
+##### offer和put操作
 
-因为是无界队列，所以是阻塞操作。
+`offer`因为是无界队列，所以是阻塞操作，`put`底层就是offer操作。
 
 ```java
  public boolean offer(E e) {
@@ -2927,7 +2927,7 @@ public class NonReentrantLock implements Lock, Serializable {
 
 ```java
 	//k=0  	指向末尾元素的位置（一开始使用末尾的元素来代替被移除的根节点）
-	//x 	末尾元素
+	//x->key 	末尾元素转换为key
 	//es	移除根节点后的数组（这里状态只是删除了尾结点）
 	//n		当前元素个数
 	private static <T> void siftDownComparable(int k, T x, Object[] es, int n) {
@@ -2935,17 +2935,25 @@ public class NonReentrantLock implements Lock, Serializable {
         Comparable<? super T> key = (Comparable<? super T>)x;
         int half = n >>> 1;           // loop while a non-leaf
         while (k < half) {
+            //查找左子节点，默认左边小
             int child = (k << 1) + 1; // assume left child is least
             Object c = es[child];
+            //查找右子节点
             int right = child + 1;
+            //right < n还没到尾结点
+            //c.compareTo(es[right]) > 0 左子节点右子节点大，c指向右子节点
             if (right < n &&
                 ((Comparable<? super T>) c).compareTo((T) es[right]) > 0)
                 c = es[child = right];
+            //如果子节点都比父节点大，找到了位置k
             if (key.compareTo((T) c) <= 0)
                 break;
+            //设定k指定位置数据为子节点数据
             es[k] = c;
+            //k开始指向被交换的位置
             k = child;
         }
+        //找到位置后设定新的值进去
         es[k] = key;
     }
 
@@ -2966,6 +2974,139 @@ public class NonReentrantLock implements Lock, Serializable {
             k = child;
         }
         es[k] = x;
+    }
+```
+
+
+
+##### take操作
+
+`take`稍微和poll有点不同，是一个阻塞操作。
+
+```java
+    public E take() throws InterruptedException {
+        final ReentrantLock lock = this.lock;
+        //和所有的阻塞操作一样，都需要对中断做出响应
+        lock.lockInterruptibly();
+        E result;
+        try {
+            while ( (result = dequeue()) == null)
+                notEmpty.await();
+        } finally {
+            lock.unlock();
+        }
+        return result;
+    }
+```
+
+
+
+
+#### DelayQueue
+
+`DelayQueue`并发队列是一个**无界、阻塞、延迟**队列。
+
+
+
+```java
+public class DelayQueue<E extends Delayed> extends AbstractQueue<E>
+    implements BlockingQueue<E> {
+
+}
+
+public interface Delayed extends Comparable<Delayed> {
+    long getDelay(TimeUnit unit);
+}
+```
+
+内部元素实现`Delayed`接口，因为内部使用`PriorityQueue`存放数据，所以要实现`Comparable`来确定优先级。
+
+
+
+使用`ReentrantLock`实现线程同步。
+
+```java
+private final transient ReentrantLock lock = new ReentrantLock();
+private final Condition available = lock.newCondition();
+
+private final PriorityQueue<E> q = new PriorityQueue<E>();
+
+private Thread leader;
+```
+
+
+
+##### offer操作
+
+```java
+    public boolean offer(E e) {
+        final ReentrantLock lock = this.lock;
+        lock.lock();
+        try {
+            //向PriorityQueue队列插入元素，这里面也是向最小堆插入数据的操作
+            q.offer(e);
+            //说明当前插入的元素e是最先将要过期的
+            if (q.peek() == e) {
+                leader = null;
+                //available条件变量通知队列有元素了。
+                available.signal();
+            }
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+```
+
+
+
+##### take操作
+
+获取并且移除队列里面延迟时间过期的元素，没有就阻塞等待。
+
+```java
+    public E take() throws InterruptedException {
+        final ReentrantLock lock = this.lock;
+        lock.lockInterruptibly();
+        try {
+            for (;;) {
+                //获取首节点
+                E first = q.peek();
+                //没有就等待，外层是for循环阻塞
+                if (first == null)
+                    available.await();
+                else {
+                    //getDelay是Delayed的接口需要实现的
+                    long delay = first.getDelay(NANOSECONDS);
+					//如果延时已经到了，直接取出来
+                    if (delay <= 0L)
+                        return q.poll();
+                    
+                    //这里如果延时还没结束，那就会开始进入等待，把first置空通知gc回收
+                    first = null; // don't retain ref while waiting
+                    //leader线程不为空，进入条件队列
+                    if (leader != null)
+                        available.await();
+                    else {
+                        //获取当前线程，设置到leader里面
+                        Thread thisThread = Thread.currentThread();
+                        leader = thisThread;
+                        try {
+                            //等待对应的时间再返回
+                            available.awaitNanos(delay);
+                        } finally {
+                            //
+                            if (leader == thisThread)
+                                leader = null;
+                        }
+                    }
+                }
+            }
+        } finally {
+            if (leader == null && q.peek() != null)
+                available.signal();
+            lock.unlock();
+        }
     }
 ```
 
