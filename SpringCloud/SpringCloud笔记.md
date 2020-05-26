@@ -23,8 +23,8 @@
 
 - **网关**：路由转发 + 过滤器
   			/api/v1/pruduct/      商品服务
-    			/api/v1/order/        订单服务
-    			/api/v1/user/   	  用户服务
+        			/api/v1/order/        订单服务
+        			/api/v1/user/   	  用户服务
 
 - **服务注册发现（注册中心）**：调用和被调用方的信息维护
 
@@ -150,7 +150,23 @@ Eureka提供Netfilx用于服务发现的客户端和服务端，服务可以使�
 ### 搭建EurekaServer
 
 - `@EnableEurekaServer`注解
-- 
+
+- 依赖：
+
+  ```xml
+          <dependency>
+              <groupId>org.springframework.cloud</groupId>
+              <artifactId>spring-cloud-starter-netflix-eureka-server</artifactId>
+          </dependency>
+  ```
+
+- 配置：
+
+  ```yaml
+  
+  ```
+
+  
 
 
 
