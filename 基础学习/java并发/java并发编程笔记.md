@@ -3766,3 +3766,621 @@ public class CountDownLatchDemo {
 
 
 
+##### 源码分析
+
+![](.\image\CountDownLatch类图.png)
+
+也就是底层使用AQS实现，使用AQS的state值作为计数器。
+
+在构造器里面设置初始的状态值（state），当线程调用`await()`方法的时候线程放入AQS阻塞队列中进行等待，`countDown()`cas修改state值递减，直到为0的时候唤醒阻塞队列中的线程。
+
+
+
+构造器：
+
+```java
+    public CountDownLatch(int count) {
+        if (count < 0) throw new IllegalArgumentException("count < 0");
+        this.sync = new Sync(count);
+    }
+		//内部类Sync的构造器就是设置state值为count
+        Sync(int count) {
+            setState(count);
+        }
+```
+
+
+
+`await()`:
+
+```java
+	//await()方法委托sync调用AQS的acquireSharedInterruptibly
+	public void await() throws InterruptedException {
+        sync.acquireSharedInterruptibly(1);
+    }
+
+	//AQS代码
+    public final void acquireSharedInterruptibly(int arg)
+            throws InterruptedException {
+        //检验中断标志位
+        if (Thread.interrupted())
+            throw new InterruptedException();
+        if (tryAcquireShared(arg) < 0)
+            //如果获取失败，让当前线程阻塞
+            doAcquireSharedInterruptibly(arg);
+    }
+
+		//Sync代码
+        protected int tryAcquireShared(int acquires) {
+            //state=0表示可以获取锁
+            return (getState() == 0) ? 1 : -1;
+        }
+```
+
+
+
+`await(long timeout, TimeUnit unit)`:
+
+```java
+    public boolean await(long timeout, TimeUnit unit)
+        throws InterruptedException {
+        return sync.tryAcquireSharedNanos(1, unit.toNanos(timeout));
+    }
+
+	//AQS代码
+    public final boolean tryAcquireSharedNanos(int arg, long nanosTimeout)
+            throws InterruptedException {
+        //检测中断标志位
+        if (Thread.interrupted())
+            throw new InterruptedException();
+		//获取到锁则返回或者超时也可以返回
+        return tryAcquireShared(arg) >= 0 ||
+            doAcquireSharedNanos(arg, nanosTimeout);
+    }
+```
+
+
+
+`countDown()`
+
+```java
+    public void countDown() {
+        sync.releaseShared(1);
+    }
+	//AQS代码
+    public final boolean releaseShared(int arg) {
+        if (tryReleaseShared(arg)) {
+            //如果state值为0，那么需要调用doReleaseShared唤醒AQS阻塞队列的线程
+            //
+            doReleaseShared();
+            return true;
+        }
+        return false;
+    }
+		//Sync代码
+        protected boolean tryReleaseShared(int releases) {
+            // Decrement count; signal when transition to zero
+            for (;;) {
+                int c = getState();
+                if (c == 0)
+                    return false;
+                int nextc = c - 1;
+                if (compareAndSetState(c, nextc))
+                    return nextc == 0;
+            }
+        }
+```
+
+
+
+
+
+#### CyclicBarrier
+
+前面的`CountDownLatch`只是起到了等待子线程结束的作用。
+
+`CyclicBarrier`可以让一组线程达到一个状态后再全部执行下一个动作，和类的名字相同，就像跑道上设置一个屏障，先到的线程会在这个地方等待直到所有线程都抵达屏障再进行下一个动作。
+
+
+
+##### 应用
+
+下面显示两个线程都完成第一阶段后才能继续执行：
+
+```java
+public class CycleBarrierDemo {
+    //计数器为0的时候，可以调用第二个参数barrierAction
+    private static CyclicBarrier cyclicBarrier = new CyclicBarrier(2, () -> {
+        System.out.println(Thread.currentThread().getName() + " reach barrier!");
+    });
+
+    public static void main(String[] args) {
+        ExecutorService executorService = Executors.newFixedThreadPool(2);
+        executorService.submit(()->{
+            try {
+                System.out.println(Thread.currentThread().getName() + " start run");
+                cyclicBarrier.await();
+                System.out.println(Thread.currentThread().getName() + " you can continue......");
+            }catch (Exception e){
+                e.printStackTrace();
+            }
+        });
+        //线程2等待一段时间后再达到barrier
+        executorService.submit(()->{
+            try {
+                System.out.println(Thread.currentThread().getName() + " start run");
+                Thread.sleep(5000);
+                cyclicBarrier.await();
+                System.out.println(Thread.currentThread().getName() + " you can continue......");
+            }catch (Exception e){
+                e.printStackTrace();
+            }
+        });
+        //等待当前线程池中的线程执行完成
+        executorService.shutdown();
+    }
+}
+
+output:
+pool-1-thread-2 start run
+pool-1-thread-1 start run
+pool-1-thread-2 reach barrier!
+pool-1-thread-2 you can continue......
+pool-1-thread-1 you can continue......
+```
+
+
+
+`CyclicBarrier`可以完成更为复杂的需求，比如现在任务包含3个阶段，所有线程都必要先到阶段1，再到阶段2，再到阶段3。
+
+```java
+public class CycleBarrierDemo2 {
+    private static CyclicBarrier cyclicBarrier = new CyclicBarrier(2);
+
+    public static void main(String[] args) {
+        ExecutorService executorService = Executors.newFixedThreadPool(2);
+        executorService.submit(() -> {
+            try {
+                System.out.println(Thread.currentThread().getName() + "reach step 1.");
+                cyclicBarrier.await();
+                System.out.println(Thread.currentThread().getName() + "reach step 2.");
+                cyclicBarrier.await();
+                System.out.println(Thread.currentThread().getName() + "reach step 3.");
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        });
+        executorService.submit(() -> {
+            try {
+                System.out.println(Thread.currentThread().getName() + "reach step 1.");
+                Thread.sleep(3000);
+                cyclicBarrier.await();
+                System.out.println(Thread.currentThread().getName() + "reach step 2.");
+                Thread.sleep(5000);
+                cyclicBarrier.await();
+                System.out.println(Thread.currentThread().getName() + "reach step 3.");
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        });
+        //等待已有线程执行完毕后关闭线程池
+        executorService.shutdown();
+    }
+}
+output:
+pool-1-thread-2reach step 1.
+pool-1-thread-1reach step 1.
+pool-1-thread-2reach step 2.
+pool-1-thread-1reach step 2.
+pool-1-thread-1reach step 3.
+pool-1-thread-2reach step 3.
+```
+
+
+
+##### 源码解析
+
+![](.\image\CyclicBarrier类图.png)
+
+`CyclicBarrier`基于`ReentranLock`实现。
+
+`parties`表示线程个数，表示多少线程调用await之后，所有线程才会冲破屏障继续往下执行。
+
+`count`初始值等于`parties`，有线程调用`await()`之后就递减1，等于0之后表示所有线程都到达了屏障的位置。
+
+之所以`CyclicBarrier`可以复用，是因为当`count=0`之后，会把`parties`的值赋值给`count`。
+
+
+
+关键变量：
+
+```java
+    /** The lock for guarding barrier entry */
+    private final ReentrantLock lock = new ReentrantLock();
+    /** Condition to wait on until tripped */
+    private final Condition trip = lock.newCondition();
+    /** The number of parties */
+    private final int parties;
+    /** The command to run when tripped */
+    private final Runnable barrierCommand;
+    /** The current generation */
+    private Generation generation = new Generation();
+
+    private static class Generation {
+        Generation() {}                 // prevent access constructor creation
+        boolean broken;                 // initially false
+    }
+
+    /**
+     * Number of parties still waiting. Counts down from parties to 0
+     * on each generation.  It is reset to parties on each new
+     * generation or when broken.
+     */
+    private int count;
+```
+
+
+
+
+
+构造器：
+
+```java
+    public CyclicBarrier(int parties, Runnable barrierAction) {
+        if (parties <= 0) throw new IllegalArgumentException();
+        this.parties = parties;
+        this.count = parties;
+        //当所有线程都到达屏障的时候执行
+        this.barrierCommand = barrierAction;
+    }	
+    public CyclicBarrier(int parties) {
+        this(parties, null);
+    }
+```
+
+
+
+`await()`:
+
+```java
+    public int await() throws InterruptedException, BrokenBarrierException {
+        try {
+            return dowait(false, 0L);
+        } catch (TimeoutException toe) {
+            throw new Error(toe); // cannot happen
+        }
+    }
+
+    public int await(long timeout, TimeUnit unit)
+        throws InterruptedException,
+               BrokenBarrierException,
+               TimeoutException {
+        return dowait(true, unit.toNanos(timeout));
+    }	
+
+    private int dowait(boolean timed, long nanos)
+        throws InterruptedException, BrokenBarrierException,
+               TimeoutException {
+        final ReentrantLock lock = this.lock;
+        //获取锁
+        lock.lock();
+        try {
+            final Generation g = generation;
+			//检测如果屏障已经被打破
+            if (g.broken)
+                throw new BrokenBarrierException();
+			//响应中断，generation.broken = true;count = parties;trip.signalAll();
+            if (Thread.interrupted()) {
+                breakBarrier();
+                throw new InterruptedException();
+            }
+			
+            int index = --count;
+            if (index == 0) {  // tripped
+                //count==0，取出预设的barrierCommand执行
+                Runnable command = barrierCommand;
+                if (command != null) {
+                    try {
+                        command.run();
+                    } catch (Throwable ex) {
+                        breakBarrier();
+                        throw ex;
+                    }
+                }
+                //trip.signalAll();唤醒条件队列中阻塞的线程
+                //count = parties;重置参数，可以继续复用
+                //generation = new Generation();重置Generation
+                nextGeneration();
+                return 0;
+            }
+
+            //如果count还没有到0，开始阻塞等待
+            // loop until tripped, broken, interrupted, or timed out
+            for (;;) {
+                try {
+                    if (!timed)
+                        //进入条件队列
+                        trip.await();
+                    else if (nanos > 0L)
+                        nanos = trip.awaitNanos(nanos);
+                } catch (InterruptedException ie) {
+                    if (g == generation && ! g.broken) {
+                        breakBarrier();
+                        throw ie;
+                    } else {
+                        // We're about to finish waiting even if we had not
+                        // been interrupted, so this interrupt is deemed to
+                        // "belong" to subsequent execution.
+                        Thread.currentThread().interrupt();
+                    }
+                }
+
+                if (g.broken)
+                    throw new BrokenBarrierException();
+
+                if (g != generation)
+                    return index;
+
+                if (timed && nanos <= 0L) {
+                    breakBarrier();
+                    throw new TimeoutException();
+                }
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+```
+
+
+
+
+
+#### Semaphore
+
+##### 应用
+
+```java
+public class SemaphoreDemo {
+    //初始化信号量计数为0
+    private static Semaphore semaphore = new Semaphore(0);
+
+    public static void main(String[] args) throws Exception {
+        ExecutorService executorService = Executors.newFixedThreadPool(2);
+        executorService.submit(()->{
+            System.out.println(Thread.currentThread().getName() + " over");
+            //计数器递增1
+            semaphore.release();
+        });
+        executorService.submit(()->{
+            System.out.println(Thread.currentThread().getName() + " over");
+			//计数器递增1
+            semaphore.release();
+        });
+        //信号量直到变为2才能返回
+        semaphore.acquire(2);
+        System.out.println("all child thread over!");
+
+        executorService.shutdown();
+    }
+}
+output:
+pool-1-thread-2 over
+pool-1-thread-1 over
+all child thread over!
+```
+
+这里`semaphore.acquire(2);`返回后当前信号量为0。
+
+
+
+其实上面的例子也可以反着用，就是提供多少信号量，然后线程使用`semaphore.acquire(1)`来竞争获取。
+
+一般用于多个线程竞争有限资源：
+
+可以看：[Java并发工具类（信号量Semaphore）](Java并发工具类（信号量Semaphore）)
+
+```java
+class Employee implements Runnable {
+    private String id;
+    private Semaphore semaphore;
+    private static Random rand= new Random(47);
+
+    public Employee(String id, Semaphore semaphore) {
+        this.id = id;
+        this.semaphore = semaphore;
+    }
+
+    public void run() {
+            try {
+                semaphore.acquire();
+                System.out.println(this.id + "is using the toilet");
+                TimeUnit.MILLISECONDS.sleep(rand.nextInt(2000));
+                semaphore.release();
+                System.out.println(this.id + "is leaving");
+            } catch (InterruptedException e) {
+            }
+    }
+}
+
+public class ToiletRace {
+    private static final int THREAD_COUNT = 30;
+
+    private static ExecutorService threadPool = Executors
+            .newFixedThreadPool(THREAD_COUNT);
+
+    private static Semaphore s = new Semaphore(10);
+
+    public static void main(String[] args) {
+        for (int i = 0; i < THREAD_COUNT; i++) {
+            threadPool.execute(new Employee(String.valueOf(i), s));
+        }
+
+        threadPool.shutdown();
+    }
+}
+
+作者：卡巴拉的树
+链接：https://juejin.im/post/5a38d2046fb9a045076fcb1f
+来源：掘金
+著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。
+```
+
+
+
+
+
+##### 源码分析
+
+![](.\image\Semaphore类图.png)
+
+内部使用一个实现AQS的`Sync`来实现，包含公平锁与非公平锁。
+
+
+
+构造器：
+
+```java
+    public Semaphore(int permits) {
+        sync = new NonfairSync(permits);
+    }
+    public Semaphore(int permits, boolean fair) {
+        sync = fair ? new FairSync(permits) : new NonfairSync(permits);
+    }
+		//参数设置为AQS的state值
+		Sync(int permits) {
+            setState(permits);
+        }
+```
+
+
+
+`acquire()`：
+
+```java
+    public void acquire() throws InterruptedException {
+        sync.acquireSharedInterruptibly(1);
+    }
+
+    public void acquire(int permits) throws InterruptedException {
+        if (permits < 0) throw new IllegalArgumentException();
+        sync.acquireSharedInterruptibly(permits);
+    }
+		
+	//不对中断进行响应
+	public void acquireUninterruptibly() {
+        sync.acquireShared(1);
+    }
+
+	public void acquireUninterruptibly(int permits) {
+        if (permits < 0) throw new IllegalArgumentException();
+        sync.acquireShared(permits);
+    }
+	
+	//AQS实现获取共享锁
+    public final void acquireShared(int arg) {
+        if (tryAcquireShared(arg) < 0)
+            doAcquireShared(arg);
+    }
+
+    public final void acquireSharedInterruptibly(int arg)
+            throws InterruptedException {
+        if (Thread.interrupted())
+            throw new InterruptedException();
+        //如果获取共享锁失败，则进入阻塞队列
+        if (tryAcquireShared(arg) < 0)
+            doAcquireSharedInterruptibly(arg);
+    }
+	//AQS实现响应中断的进入阻塞队列
+    private void doAcquireSharedInterruptibly(int arg)
+        throws InterruptedException {
+		//......具体看aqs说明
+    }
+```
+
+
+
+非公平锁的实现方式：
+
+```java
+		//NonfairSync尝试获取锁
+		protected int tryAcquireShared(int acquires) {
+            return nonfairTryAcquireShared(acquires);
+        }
+	
+		//Sync
+        final int nonfairTryAcquireShared(int acquires) {
+            //循环阻塞，直到
+            for (;;) {
+                //获取当前state值
+                int available = getState();
+                //减去指定值
+                int remaining = available - acquires;
+                //小于0的情况直接返回，会进入阻塞队列
+                //否则cas操作修改剩余的值，成功则返回，否则继续阻塞进行循环验证
+                if (remaining < 0 ||
+                    compareAndSetState(available, remaining))
+                    return remaining;
+            }
+        }
+```
+
+
+
+
+
+公平锁的实现方式：
+
+```java
+        protected int tryAcquireShared(int acquires) {
+            for (;;) {
+                //保证获取队首的元素
+                if (hasQueuedPredecessors())
+                    return -1;
+                int available = getState();
+                int remaining = available - acquires;
+                if (remaining < 0 ||
+                    compareAndSetState(available, remaining))
+                    return remaining;
+            }
+        }
+```
+
+
+
+`release()`方法：
+
+把`Semaphore`对象的信号量值加一：
+
+```java
+    public void release() {
+        sync.releaseShared(1);
+    }
+    public void release(int permits) {
+        if (permits < 0) throw new IllegalArgumentException();
+        sync.releaseShared(permits);
+    }
+
+	//AQS实现
+    public final boolean releaseShared(int arg) {
+        if (tryReleaseShared(arg)) {
+            //成功的情况开始唤醒阻塞队列，这个看AQS的源码说明
+            doReleaseShared();
+            return true;
+        }
+        return false;
+    }
+		//Sync
+		//循环使用cas增加当前值
+        protected final boolean tryReleaseShared(int releases) {
+            for (;;) {
+                int current = getState();
+                int next = current + releases;
+                if (next < current) // overflow
+                    throw new Error("Maximum permit count exceeded");
+                if (compareAndSetState(current, next))
+                    return true;
+            }
+        }
+```
+
