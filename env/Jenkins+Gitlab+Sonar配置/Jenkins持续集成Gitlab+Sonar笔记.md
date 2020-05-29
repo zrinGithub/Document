@@ -105,29 +105,83 @@ git --version
 
   不建议使用 等同于fetch之后merge
 
- 
+- 分支
+  - `git branch`列出分支（当前分支前面带*）
+  - `git branch branchName`创建分支
+  - `git branch -d branchName`删除分支（不能删除当前分支）
+  - `git branch -m oldName newName`重命名
+  - `git checkout branchName`切换到指定分支（本地变更没有提交的话会报错）
+  - `git checkout -f branchName`强制切换到指定分支（未提交的变更直接丢弃）
 
- 
 
- 
 
- 
+### git的文件状态
 
-### 第六集 git的文件状态
-
-- git status
+- `git status`
 
   用于查看git的状态
 
-- git rm
+- `git rm 文件名` 
 
-  用于git文件的删除操作 如果只是 git rm --cache 仅删除暂存区里的文件 如果不加--cache 会删除工作区里的文件 并提交到暂存区
+  用于git文件的删除操作 如果只是 `git rm --cache` 仅删除暂存区里的文件 如果不加--cache 会删除工作区里的文件 并提交到暂存区
 
-- git checkout
+- `git checkout`
 
-  直接加文件名 从暂存区将文件恢复到工作区，如果工作区已经有该文件，则会选择覆盖加了【分支名】 +文件名 则表示从分支名为所写的分支名中拉取文件 并覆盖工作区里的文件
+  直接加文件名，从暂存区将文件恢复到工作区，如果工作区已经有该文件，则会选择覆盖
 
-  新建文件--->Untracked 使用add命令将新建的文件加入到暂存区--->Staged 使用commit命令将暂存区的文件提交到本地仓库--->Unmodified 如果对Unmodified状态的文件进行修改---> modified 如果对Unmodified状态的文件进行remove操作--->Untracked
+  加了【分支名】 +文件名：`git checkout master a.txt` 则表示从分支名为所写的分支名中拉取文件 并覆盖工作区里的文件
+  
+  
+  
+
+`git init`新建文件--->Untracked 
+
+使用`add`命令将新建的文件加入到暂存区--->Staged 
+
+使用`commit`命令将暂存区的文件提交到本地仓库--->Unmodified 
+
+如果对Unmodified状态的文件进行修改---> modified 
+
+如果对Unmodified状态的文件进行remove操作--->Untracked
+
+ ![git文件状态](.\images\git文件状态.png)
+
+ 
+
+
+
+### log
+
+用于查看git的提交历史
+
+
+
+- `git log`命令显示的信息的具体含义
+
+  ```bash
+  --SHA-1 校验和 也就是commit id
+  commit dead7c3c7e683ad60cb12f64749dd2afsfbe5eda (HEAD -> master)
+  --作者跟邮箱概要信息
+  Author: Xxx <Xxx@123.com>
+  --提交时间
+  Date:   Fri May 29 14:25:38 2020 +0800
+  --说明
+  ......
+  ```
+
+  
+
+- `git log -数字` 表示查看最近几次的提交
+
+- `git log -p -2` 显示最近两次提交的不同点
+
+- `git log --author jack` 查看具体某个作者的提交
+
+- `git log --online` 输出简要的信息
+
+- `git log --graph` 以一个简单的线串联起整个提交历史
+
+- `git log` 输出信息的定制
 
  
 
@@ -135,106 +189,19 @@ git --version
 
  
 
-### 第七集 git的图形化客户端
+### 对比git diff
 
-- 图形化客户端: sourcetree
+`git diff`用于比较差异、解决冲突、制作补丁
 
-- 下载: https://www.sourcetreeapp.com/
+- `git diff` 不加任何参数 用于比较当前工作区跟暂存区的差异
 
-- 安装: 由于种种不可描述的原因，无法注册账号且无法登陆所以需要绕过登陆
+- `git diff --cached` 或者`git diff --staged`比较暂存区（先`commit`到暂存区）和当前分支的区别
 
-- 绕过登陆
+- `git diff HEAD`
 
-  去到 C:\Users\当前用户目录\AppData\Local\Atlassian\SourceTree 目录下 新建 accounts.json 文件 将一下内容复制进去 [ { "type": "SourceTree.Api.Host.Identity.Model.IdentityAccount, SourceTree.Api.Host.Identity", "Authenticate": true, "HostInstance": { "type": "SourceTree.Host.Atlassianaccount.AtlassianAccountInstance, SourceTree.Host.AtlassianAccount", "Host": { "type": "SourceTree.Host.Atlassianaccount.AtlassianAccountHost, SourceTree.Host.AtlassianAccount", "Id": "atlassian account" }, "BaseUrl": "https://id.atlassian.com/" }, "Credentials": { "type": "SourceTree.Model.BasicAuthCredentials, SourceTree.Api.Account", "Username": "", "Email": null }, "IsDefault": false } ]
+- `git diff 分支名` 查看当前分支跟指定的分支的差异
 
- 
-
- 
-
- 
-
-### 第八集 git的分支
-
-- 什么是分支
-
-  软件项目中启动一套单独的开发线的方法
-
-- 为什么使用git
-
-  可以很好的避免版本兼容开发的问题，避免不同版本之间的相互影响 封装一个开发阶段 解决bug的时候新建分支，用于对该bug的研究
-
-- git中跟分支相关的命令
-
-  git branch 分支名 git branch 不加任何参数，列出所有的分支，分支前面有*号，代表该分支为当前所在分支
-
-  - 创建分支的时候，分支名不用使用特殊符号 git branch -d 分支名
-    *不能删除当前所在的分支 git branch -m 旧分支名 新分支名
-
-    git checkout 分支名 切换分支 如果在分支上面对文件进行修改之后，没有commit就切换到另外一个分支b， 这个时候会报错，因为没有commit的文件在切换分支之后会不覆盖。所以Git 报错提示。
-
-    git checkout -f 分支名 强制切换到分支，如果当前有为提交的变更，会直接丢弃 -f 参数一定一定要非常非常小心使用，一般情况下不建议使用，除非真的要强制去执行
-
- 
-
- 
-
- 
-
- 
-
-### 第九集 log命令
-
-- log命令的作用
-
-  用于查看git的提交历史
-
-- git log命令显示的信息的具体含义
-
-  commit 4a70ceb24b6849ad830d6af5126c9227b333d2d1 --SHA-1 校验和 commit id Author: wiggin [wiggin@gmail.com](mailto:wiggin@gmail.com) --作者跟邮箱概要信息 Date: Wed May 16 23:51:02 2018 +0800 --提交时间
-
-  v2 --commit的时候，使用-m选项说写一段概要说明 日常在使用commit的时候，-m选项所写得内容一定不能随便写 “修改了登陆的bug”--》“新增用户管理中心”
-
-- git log -数字 表示查看最近几次的提交
-
-- git log -p -2 显示最近两次提交的不同点
-
-- git log --author 查看具体某个作者的提交
-
-- git log --online 输出简要的信息
-
-- git log --graph 以一个简单的线串联起整个提交历史
-
-- git log 输出信息的定制
-
- 
-
- 
-
- 
-
- 
-
- 
-
- 
-
-### 第十集 文件对比利器--git diff
-
-- diff -->difference的缩写，用于比较差异
-
-- 使用场景
-
-  解决冲突 制作补丁
-
-- git diff 不加任何参数 用于比较当前工作区跟暂存区的差异
-
-- git diff --cached 或者--staged
-
-- git diff HEAD
-
-- git diff 分支名 查看当前分支跟指定的分支的差异
-
-- git diff 分支名1 分支名2 查看两个指定分支(已提交的)的差异，分支2 跟分支1的差别
+- `git diff 分支名1 分支名2` 查看两个指定分支(已提交的)的差异，分支2 跟分支1的差别
 
 - git diff 文件名 查看指定文件的差异
 
