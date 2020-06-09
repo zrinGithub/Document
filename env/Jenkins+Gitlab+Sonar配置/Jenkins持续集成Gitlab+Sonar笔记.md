@@ -195,19 +195,19 @@ git --version
 
 - `git diff` 不加任何参数 用于比较当前工作区跟暂存区的差异
 
-- `git diff --cached` 或者`git diff --staged`比较暂存区（先`commit`到暂存区）和当前分支的区别
+- `git diff --cached` 或者`git diff --staged`比较暂存区（先`add`到暂存区）和当前分支的区别
 
-- `git diff HEAD`
+- `git diff HEAD`查看当前分支跟当前暂存区
 
 - `git diff 分支名` 查看当前分支跟指定的分支的差异
 
 - `git diff 分支名1 分支名2` 查看两个指定分支(已提交的)的差异，分支2 跟分支1的差别
 
-- git diff 文件名 查看指定文件的差异
+- `git diff 文件名` 查看指定文件的差异
 
-- git diff commitid1 commitid2 用于列出两个历史提交的差异
+- `git diff commitid1 commitid2` 用于列出两个历史提交的差异
 
-- git diff --stat 用于罗列有变更的文件
+- `git diff --stat` 用于罗列有变更的文件
 
  
 
