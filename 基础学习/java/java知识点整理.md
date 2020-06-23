@@ -1014,6 +1014,30 @@ get：
 
 #### ConcurrentHashMap源码解析
 
+主要特点：线程安全。
+
+但是性能比HashTable（全部synchronized同步）
+
+
+
+使用分段锁来提高性能，锁粒度更加细化。
+
+
+
+
+
+**jdk1.7和jdk1.8里面ConcurrentHashMap实现的区别**：
+
+
+
+JDK8之前，ConcurrentHashMap使用锁分段技术，将数据分成一段段存储，每个数据段配置一把锁，即segment类，这个类继承ReentrantLock来保证线程安全
+技术点：**Segment**+**HashEntry**
+
+
+
+JKD8的版本取消Segment这个分段锁数据结构，底层也是使用Node数组+链表+红黑树，从而实现对每一段数据就行加锁，也减少了并发冲突的概率，CAS(读)+Synchronized(写)
+技术点：**Node+Cas+Synchronized**
+
 
 
 
