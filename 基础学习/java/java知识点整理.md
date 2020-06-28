@@ -1042,8 +1042,223 @@ JKD8的版本取消Segment这个分段锁数据结构，底层也是使用Node�
 
 
 
+**源码**：
+
+```java
+    final V putVal(K key, V value, boolean onlyIfAbsent) {
+        if (key == null || value == null) throw new NullPointerException();
+        //重哈希，减少碰撞的概率
+        int hash = spread(key.hashCode());
+        int binCount = 0;
+        for (Node<K,V>[] tab = table;;) {
+            Node<K,V> f; int n, i, fh;
+            //tab懒加载
+            if (tab == null || (n = tab.length) == 0)
+                tab = initTable();
+            //tabAt使用Unsafe volatile语义从对象的指定偏移获取引用，
+            //这里就是指hash值对应位置的节点
+            //如果该位置为空，cas初始化节点
+            else if ((f = tabAt(tab, i = (n - 1) & hash)) == null) {
+                if (casTabAt(tab, i, null,
+                             new Node<K,V>(hash, key, value, null)))
+                    break;                   // no lock when adding to empty bin
+            }
+            //需要扩容
+            else if ((fh = f.hash) == MOVED)
+                tab = helpTransfer(tab, f);
+            //不需要扩容，检测是红黑树还是链表进行处理
+            else {
+                V oldVal = null;
+                //锁住指定的节点f来进行处理
+                synchronized (f) {
+                    if (tabAt(tab, i) == f) {
+                        if (fh >= 0) {
+                            binCount = 1;
+                            for (Node<K,V> e = f;; ++binCount) {
+                                K ek;
+                                //如果hash值和键值都相等替换
+                                if (e.hash == hash &&
+                                    ((ek = e.key) == key ||
+                                     (ek != null && key.equals(ek)))) {
+                                    oldVal = e.val;
+                                    if (!onlyIfAbsent)
+                                        e.val = value;
+                                    break;
+                                }
+                                //如果没有对应的key且到达链表尾部，直接创建新的节点
+                                Node<K,V> pred = e;
+                                if ((e = e.next) == null) {
+                                    pred.next = new Node<K,V>(hash, key,
+                                                              value, null);
+                                    break;
+                                }
+                            }
+                        }
+                        //红黑树处理
+                        else if (f instanceof TreeBin) {
+                            Node<K,V> p;
+                            binCount = 2;
+                            if ((p = ((TreeBin<K,V>)f).putTreeVal(hash, key,
+                                                           value)) != null) {
+                                oldVal = p.val;
+                                if (!onlyIfAbsent)
+                                    p.val = value;
+                            }
+                        }
+                    }
+                }
+                if (binCount != 0) {
+                    if (binCount >= TREEIFY_THRESHOLD)
+                        treeifyBin(tab, i);
+                    if (oldVal != null)
+                        return oldVal;
+                    break;
+                }
+            }
+        }
+        addCount(1L, binCount);
+        return null;
+    }
+```
 
 
+
+
+
+
+
+## 三. 并发编程
+
+### 1. 基础
+
+#### 线程、进程、协程的区别
+
+进程:本质上是一个独立执行的程序，进程是操作系统进行资源分配和调度的基本概念，操作系统进行资源分配和调度的一个独立单位
+
+
+
+线程:是操作系统能够进行运算调度的最小单位。它被包含在进程之中，是进程中的实际运作单位。一个进程中可以并发多个线程，每条线程执行不同的任务，切换受系统控制。
+
+
+
+协程: 又称为微线程，是一种用户态的轻量级线程，协程不像线程和进程需要进行系统内核上的上下文切换，协程的上下文切换是由用户自己决定的，有自己的上下文，所以说是轻量级的线程，也称之为用户级别的线程就叫协程，一个线程可以多个协程,线程进程都是同步机制，而协程则是异步 
+Java的原生语法中并没有实现协程,目前python、Lua和GO等语言支持
+
+
+
+关系：一个进程可以有多个线程，它允许计算机同时运行两个或多个程序。线程是进程的最小执行单位，CPU的调度切换的是进程和线程，进程和线程多了之后调度会消耗大量的CPU，CPU上真正运行的是线程，线程可以对应多个协程
+
+
+
+#### 协程对于多线程有什么优缺点吗
+
+优点：
+    非常快速的上下文切换，不用系统内核的上下文切换，减小开销
+    单线程即可实现高并发，单核CPU可以支持上万的协程
+    由于只有一个线程，也不存在同时写变量的冲突，在协程中控制共享资源不需要加锁
+
+
+
+缺点：
+    协程无法利用多核资源，本质也是个单线程
+    协程需要和进程配合才能运行在多CPU上
+    目前java没成熟的第三方库，存在风险
+    调试debug存在难度，不利于发现问题
+
+
+
+#### 并发和并行的区别
+
+**并发 concurrency**：
+一台处理器上同时处理任务, 这个同时实际上是交替处理多个任务，程序中可以同时拥有两个或者多个线程，当有多个线程在操作时,如果系统只有一个CPU,则它根本不可能真正同时进行一个以上的线程,它只能把CPU运行时间划分成若干个时间段,再将时间段分配给各个线程执行
+
+**并行 parallellism**：
+    多个CPU上同时处理多个任务，一个CPU执行一个进程时，另一个CPU可以执行另一个进程，两个进程互不抢占CPU资源，可以同时进行
+        
+
+并发指在一段时间内宏观上去处理多个任务。  并行指同一个时刻，多个任务确实真的同时运行。    
+
+
+
+#### 线程实现方式
+
+- 继承Thread
+- 实现Runnable
+- 通过FutureTask包装Callable方式
+- 线程池创建（submit包含返回值）
+
+
+
+#### 线程状态
+
+`Thread`类里面的`State`里面包含6种，JVM里面包含9种：
+
+```java
+    public enum State {
+        /**
+         * Thread state for a thread which has not yet started.
+         */
+        NEW,
+
+        /**
+         * Thread state for a runnable thread.  A thread in the runnable
+         * state is executing in the Java virtual machine but it may
+         * be waiting for other resources from the operating system
+         * such as processor.
+         */
+        RUNNABLE,
+
+        /**
+         * Thread state for a thread blocked waiting for a monitor lock.
+         * A thread in the blocked state is waiting for a monitor lock
+         * to enter a synchronized block/method or
+         * reenter a synchronized block/method after calling
+         * {@link Object#wait() Object.wait}.
+         */
+        BLOCKED,
+
+        /**
+         * Thread state for a waiting thread.
+         * A thread is in the waiting state due to calling one of the
+         * following methods:
+         * <ul>
+         *   <li>{@link Object#wait() Object.wait} with no timeout</li>
+         *   <li>{@link #join() Thread.join} with no timeout</li>
+         *   <li>{@link LockSupport#park() LockSupport.park}</li>
+         * </ul>
+         *
+         * <p>A thread in the waiting state is waiting for another thread to
+         * perform a particular action.
+         *
+         * For example, a thread that has called <tt>Object.wait()</tt>
+         * on an object is waiting for another thread to call
+         * <tt>Object.notify()</tt> or <tt>Object.notifyAll()</tt> on
+         * that object. A thread that has called <tt>Thread.join()</tt>
+         * is waiting for a specified thread to terminate.
+         */
+        WAITING,
+
+        /**
+         * Thread state for a waiting thread with a specified waiting time.
+         * A thread is in the timed waiting state due to calling one of
+         * the following methods with a specified positive waiting time:
+         * <ul>
+         *   <li>{@link #sleep Thread.sleep}</li>
+         *   <li>{@link Object#wait(long) Object.wait} with timeout</li>
+         *   <li>{@link #join(long) Thread.join} with timeout</li>
+         *   <li>{@link LockSupport#parkNanos LockSupport.parkNanos}</li>
+         *   <li>{@link LockSupport#parkUntil LockSupport.parkUntil}</li>
+         * </ul>
+         */
+        TIMED_WAITING,
+
+        /**
+         * Thread state for a terminated thread.
+         * The thread has completed execution.
+         */
+        TERMINATED;
+    }
+```
 
 
 
