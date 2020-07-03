@@ -54,348 +54,473 @@ Netty采用最新的4.x版本：
 
 ## 二. 使用JDK BIO编写Client-Server通信
 
-### 1、BIO网络编程实战之编写BioServer服务端
+### 1. BioServer服务端
 
-**简介: 使用jdk自带的Bio编写一个统一时间服务**
+BioServer:
 
- 
+```java
+public class BioServer {
+    private static final int PORT = 8080;
 
-### 2、BIO网络编程实战之编写BioClient客服端
-
-**简介：使用BIO网络编程编写BioClient客户端**
-
- 
-
- 
-
-### 3、BIO编写Client/Server通信优缺点分析
-
-**简介：讲解BIO的优缺点，为啥不能高并发情况下性能弱**
-
-
-
-```
-
-```
-
-
-
-
-
-
-
-
-
-```
-    
-    优点：
-        模型简单
-        编码简单
-    
-    缺点:
-        性能瓶颈，请求数和线程数 N：N关系
-        高并发情况下，CPU切换线程上下文损耗大
-
-
-    案例：web服务器Tomcat7之前，都是使用BIO，7之后就使用NIO
-    
-    改进：伪NIO,使用线程池去处理业务逻辑
+    public static void main(String[] args) {
+        try (ServerSocket serverSocket = new ServerSocket(PORT)) {
+            System.out.println("--------------Server start--------------");
+            while (true) {
+                //等待连接
+                Socket socket = serverSocket.accept();
+                //调用Handler线程来处理连接
+                new Thread(new TimeServerHandler(socket)).start();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}
 ```
 
 
 
- 
+TimeServerHandler:
 
- 
+```java
+public class TimeServerHandler implements Runnable {
+    private final Socket socket;
 
- 
+    public TimeServerHandler(Socket socket) {
+        this.socket = socket;
+    }
 
- 
+    @Override
+    public void run() {
+        System.out.println("=========TimeHandler run()=========");
+        try (BufferedReader in = new BufferedReader(new InputStreamReader(this.socket.getInputStream()));
+             PrintWriter out = new PrintWriter(this.socket.getOutputStream(), true);
+             socket) {
 
-**![å°Dè¯¾å ](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGoAAAAiCAMAAACA9LykAAAAY1BMVEUAAAAjJikjJiojJiokJigjJikkJigjJikjJikjJikjJikkJigjJiojJiokJigjJiomJiYmJibWABPWABMmJiYmJiYmJibWABN9Ex99Ex/WABMmJiYjJiqgoKB3d3dcXFxBQUEZhcyGAAAAG3RSTlMAQIC/MGAQz9+fj+8gr3BQv4C/gCCvUN+/gGCwJXa4AAACP0lEQVRIx72W2ZLbIBBFe2EVQrLHnslCZ/n/rwwoOCDH5CWyzxO2VJy63TQlGGAQFbwEhagpOseE8BpmzRL8Cq9h9iJOw2uYWYRneBb67LtTsYiEZwXDlE47s4g8x2VsVplXuJRLGbtzUXap4zOFYvr54x16rIiFo1lS4fu3sIuFzyjhe6qcocftYukJRrQn7c0Bp6a679bcfvHDLpMCEB/jVB8bWonB4EBlq8kDjCvYVF8vlwtpA4UoMauQGeU2kZYYfBhMb9oIV7gjq6YHqrdPb28sQUEGGUsq5/ymQvLi2MUwkX5Y6lRdCgpq6VT8SHUphYphLi8z9KnIol+w4HnUqpZLJ2/+UsWpqBQvVVVcjrYiFwE5RwSZWQHlJauyesA53bAA14RQ6VWxqKIIZD5/gYLnqkJEaxGxpRccj9UNDR+2XfBZFaFgRJUt1uAhw1T1N9Wy9KrAPFSppnJwPu2uQaqT0vWqqpToTaUAJsc82b6rQ0Jz4dJU9s8tSGavQkQKXAdiXmVhBuuriNgRjWL5pprQ9mPlunPKuykIWZ+Zg1ZuBea88oNUgwpalfpQ1G0/ja6lGYoKVJYbzHiLmRke4prLJFN3KKG6+xfhHygFGwYrQ9XUVB8O65nIIBxNf9zPJ9z+ka18/816Hw7vVMZLxsMBTOvwXPikAJ1kJjgEYuzr1/XKnRSLHPlthtZq08rXYSVz7BendmIJi+7aPJJ+ixCOZY3btuw3ScMjHI9ZvZUdzq8GngYiVTQeq/kFPvQz03kWbEEAAAAASUVORK5CYII=) 愿景："让编程不在难学，让技术与生活更加有趣" 更多教程请访问 xdclass.net**
-
-------
-
- 
-
-## 第三章：(面试核心)服务端网络编程常见网络IO模型讲解
-
- 
-
-### 1、最通俗的方式讲解 什么是阻塞/非阻塞，什么是同/异步
-
-**简介：使用最通俗概念讲解 同步异步、堵塞和非堵塞**
-
-- 洗衣机洗衣服
-  - 洗衣机洗衣服（无论阻塞式IO还是非阻塞式IO，都是同步IO模型）
-- 同步阻塞：你把衣服丢到洗衣机洗，然后看着洗衣机洗完，洗好后再去晾衣服（你就干等，啥都不做，阻塞在那边）
-- 同步非阻塞：你把衣服丢到洗衣机洗，然后会客厅做其他事情，定时去阳台看洗衣机是不是洗完了，洗好后再去晾衣服（等待期间你可以做其他事情，比如用电脑打开小D课堂看视频学习）
-- 异步阻塞: 你把衣服丢到洗衣机洗，然后看着洗衣机洗完，洗好后再去晾衣服（几乎没这个情况，几乎没这个说法，可以忽略）
-- 异步非阻塞：你把衣服丢到洗衣机洗，然后会客厅做其他事情，洗衣机洗好后会自动去晾衣服，晾完成后放个音乐告诉你洗好衣服并晾好了
-
- 
-
-### 2、(BAT面试核心知识)Linux网络编程中的五种I/O模型讲解上集
-
-**简介：linux网络编程中的IO模型讲解上集**
-
-- 网络IO,用户程序和内核的交互为基础进行讲解
-- IO操作分两步：发起IO请求等待数据准备，实际IO操作（洗衣服，晾衣服） 同步须要主动读写数据，在读写数据的过程中还是会阻塞（好比晾衣服阻塞了你） 异步仅仅须要I/O操作完毕的通知。并不主动读写数据，由操作系统内核完毕数据的读写（机器人帮你自动晾衣服）
-- 五种IO的模型：阻塞IO、非阻塞IO、多路复用IO、信号驱动IO和异步IO, 前四种都是同步IO，在内核数据copy到用户空间时都是阻塞的
-
-
-
-```
-
+            String body = null;
+            while ((body = in.readLine()) != null && body.length() != 0) {
+                System.out.println("the time server receive msg: " + body);
+                out.println(new Date().toString());
+                //前面设定了输出自动刷新，这里不用刷入
+//                out.flush();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}
 ```
 
 
 
+ 验证：
 
-
-
-
-
-
+```shell
+curl localhost:8080
 ```
- 权威：RFC标准，或者书籍 《UNIX Network Programming》中文名《UNIX网络编程-卷一》第六章
-     1）阻塞式I/O；
-     2）非阻塞式I/O；
-     3）I/O复用（select，poll，epoll...）；
-            I/O多路复用是阻塞在select，epoll这样的系统调用，没有阻塞在真正的I/O系统调用如recvfrom
-            进程受阻于select,等待可能多个套接口中的任一个变为可读
-    
-            IO多路复用使用两个系统调用(select和recvfrom)
-            blocking IO只调用了一个系统调用(recvfrom)
-            select/epoll 核心是可以同时处理多个connection，而不是更快，所以连接数不高的话，性能不一定比多线程+阻塞IO好
-            多路复用模型中，每一个socket，设置为non-blocking,
-            阻塞是被select这
+
+或者使用telnet：
+
+[win10安装telnet](https://jingyan.baidu.com/article/e73e26c09f6f4724adb6a7de.html)
+
+```shell
+telnet localhost 8080
 ```
 
 
 
- 
+### 2. BioClient客服端
 
-### 3、(BAT面试核心知识)Linux网络编程中的五种I/O模型讲解下集
+BioClient：
 
-**简介：linux网络编程中的IO模型讲解下集**
+```java
+public class BioClient {
+    private static final String HOST = "127.0.0.1";
+    private static final int PORT = 8080;
 
-- 4）信号驱动式I/O（SIGIO）；
-- 5）异步I/O（POSIX的aio_系列函数） Future-Listener机制；
-- IO操作分为两步
-  - 发起IO请求，等待数据准备(Waiting for the data to be ready)
-  - 实际的IO操作，将数据从内核拷贝到进程中(Copying the data from the kernel to the process)
-- 前四种IO模型都是同步IO操作，区别在于第一阶段，而他们的第二阶段是一样的：在数据从内核复制到应用缓冲区期间（用户空间），进程阻塞于recvfrom调用或者select()函数。 相反，异步I/O模型在这两个阶段都要处理。
-- 阻塞IO和非阻塞IO的区别在于第一步，发起IO请求是否会被阻塞，如果阻塞直到完成那么就是传统的阻塞IO，如果不阻塞，那么就是非阻塞IO。同步IO和异步IO的区别就在于第二个步骤是否阻塞，如果实际的IO读写阻塞请求进程，那么就是同步IO，因此阻塞IO、非阻塞IO、IO复用、信号驱动IO都是同步IO，如果不阻塞，而是操作系统帮你做完IO操作再将结果返回给你，那么就是异步IO。
-
-
-
-```
-
+    public static void main(String[] args) {
+        try (Socket socket = new Socket(HOST, PORT);
+             //获取返回的时间
+             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+             //发送数据给服务端
+             PrintWriter out = new PrintWriter(socket.getOutputStream(), true)
+        ) {
+            out.println("this is the client!");
+            //获取服务器返回的信息
+            String responseMsg = in.readLine();
+            System.out.println("get server time :" + responseMsg);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}
 ```
 
 
 
 
 
+ 
+
+ 
+
+### 3. BIO优缺点分析
+优点：
+	模型简单
+	编码简单
+
+缺点:
+	性能瓶颈，请求数和线程数 N:N关系
+	高并发情况下，CPU切换线程上下文损耗大
+
+案例：web服务器Tomcat7之前，都是使用BIO，7之后就使用NIO
+
+
+
+Bio改进：伪NIO:使用线程池去处理业务逻辑
 
 
 
 
-```
+
+## 三. 服务端网络编程常见网络IO模型
+
+ 
+
+### 1、阻塞/非阻塞，同/异步
+
+阻塞与非阻塞是指执行了动作之后，是挂起等待（阻塞）还是继续运行（非阻塞）。
+
+同步和异步主要看请求发起方获取消息结果是主动发起（同步）还是被动通知（异步）。
+
+
+
+举例：
+
+去照相馆拍照：
+
+- 同步阻塞：在店里一直等着洗照片
+- 同步非阻塞：在店里边等边做其他事情，一直询问老板是否完成（轮询）
+- 异步阻塞：你留下手机号，然后在外面进入待机状态什么都不干，等老板通知（一般很少用）
+- 异步非阻塞：你留下手机号，然后在外面玩耍，等老板通知
+
+ 
+
+### 2. Linux网络编程中的五种I/O模型
+
+**权威：RFC标准，或者书籍 《UNIX Network Programming》中文名《UNIX网络编程-卷一》第六章**
+
+
+
+网络IO,用户程序和内核的交互为基础进行讲解：
+
+- IO操作分发起IO请求等待数据准备。
+
+- 实际IO操作同步须要主动读写数据，在读写数据的过程中还是会阻塞。
+
+- 异步仅仅须要I/O操作完毕的通知，并不主动读写数据，由操作系统内核完成数据的读写
+
+  
+
+  
+
+五种IO的模型：阻塞IO、非阻塞IO、多路复用IO、信号驱动IO和异步IO, 前四种都是同步IO，在内核（**Linux kernel 内核**）数据copy到**用户空间**时都是阻塞的。
+
+#### 阻塞式I/O
+
+![](.\images\阻塞IO模型.webp)
+
+
+
+
+
+#### 非阻塞式I/O
+
+数据拷贝的时候还是阻塞的。
+
+![](.\images\非阻塞IO模型.webp)
+
+
+
+
+
+#### I/O多路复用
+
+I/O多路复用是阻塞在select，epoll这样的系统调用，没有阻塞在真正的I/O系统调用如recvfrom
+
+进程受阻于select（想一下java nio的selector），等待可能多个套接口中的任一个变为可读
+
+IO多路复用使用两个系统调用(select和recvfrom)
+
+blocking IO只调用了一个系统调用(recvfrom)
+
+select/epoll 核心是可以同时处理多个connection，而不是更快，所以连接数不高的话，性能不一定比多线程+阻塞IO好
+
+多路复用模型中，每一个socket，设置为non-blocking,
+
+阻塞是被select这个函数block，而不是被socket阻塞的
+
+![](.\images\IO复用模型.webp)
+
+
+
+
+
+#### 信号驱动式I/O（SIGIO）
+
+
+
+![](.\images\信号驱动的IO复用模型.webp)
+
+### 
+
+#### 异步I/O
+
+IO操作分为两步
+
+- 发起IO请求，等待数据准备(Waiting for the data to be ready)
+- 实际的IO操作，将数据从内核拷贝到进程中(Copying the data from the kernel to the process)
+
+![](.\images\异步IO模型.webp)
+
+
+
+#### 总结
+
+前四种IO模型都是同步IO操作，区别在于第一阶段，而他们的第二阶段是一样的。
+
+在数据从内核复制到应用缓冲区期间（用户空间），进程阻塞于recvfrom调用或者select()函数。 相反，异步I/O模型在这两个阶段都要处理。
+
+
+
+阻塞IO和非阻塞IO的区别在于第一步，发起IO请求是否会被阻塞，如果阻塞直到完成那么就是传统的阻塞IO，如果不阻塞，那么就是非阻塞IO。
+
+
+
+同步IO和异步IO的区别就在于第二个步骤是否阻塞，如果实际的IO读写阻塞请求进程，那么就是同步IO，因此阻塞IO、非阻塞IO、IO复用、信号驱动IO都是同步IO，如果不阻塞，而是操作系统帮你做完IO操作再将结果返回给你，那么就是异步IO。
+
+
+
 几个核心点：
-   阻塞非阻塞说的是线程的状态（重要）
-   同步和异步说的是消息的通知机制（重要）
-   
-   同步需要主动读写数据,异步是不需要主动读写数据
-   同步IO和异步IO是针对用户应用程序和内核的交互
-```
 
+- 阻塞非阻塞说的是线程的状态（重要）
 
+- 同步和异步说的是消息的通知机制（重要）
 
- 
+- 同步需要主动读写数据,异步是不需要主动读写数据
 
- 
+- 同步IO和异步IO是针对用户应用程序和内核的交互
 
-### 4、高并发编程必备知识IO多路复用技术select、poll讲解
+  
 
-**简介：高并发编程必备知识IO多路复用技术select、poll讲解**
+### 3. IO多路复用技术select、poll、epoll
 
+I/O多路复用：
 
+I/O是指网络I/O，多路指多个TCP连接(即socket或者channel），复用指复用一个或几个线程。
 
-```
-
-```
+就是使用一个或者几个线程处理多个TCP连接，最大优势是减少系统开销小，不必创建与维护多余的进程/线程
 
 
 
 
 
+**select**
+
+基本原理：监视文件3类描述符： writefds、readfds、和exceptfds。
+
+调用后select函数会阻塞住，等有数据 可读、可写、出异常 或者 超时 就会返回。
+
+select函数正常返回后，通过遍历fdset整个数组才能发现哪些句柄发生了事件，来找到就绪的描述符fd（File descriptor），然后进行对应的IO操作。
 
 
 
+几乎在所有的平台上支持，跨平台支持性好
 
-```
-什么是IO多路复用：I/O多路复用，I/O是指网络I/O, 多路指多个TCP连接(即socket或者channel），复用指复用一个或几个线程。简单来说：就是使用一个或者几个线程处理多个TCP连接,最大优势是减少系统开销小，不必创建过多的进程/线程，也不必维护这些进程/线程
-```
-
-
-
- 
-
-
-
-```
-
-```
-
-
-
-
-
-
-
-
-
-```
-select：
-    基本原理：监视文件3类描述符： writefds、readfds、和exceptfds,调用后select函数会阻塞住，等有数据 可读、可写、出异常 或者 超时 就会返回, select函数正常返回后，通过遍历fdset整个数组才能发现哪些句柄发生了事件，来找到就绪的描述符fd，然后进行对应的IO操作,几乎在所有的平台上支持，跨平台支持性好
-    
 缺点：
-    1）select采用轮询的方式扫描文件描述符，全部扫描，随着文件描述符FD数量增多而性能下降            
-    2）每次调用 select()，需要把 fd 集合从用户态拷贝到内核态，并进行遍历(消息传递都是从内核到用户空间)
-    3）最大的缺陷就是单个进程打开的FD有限制，默认是1024   （可修改宏定义，但是效率仍然慢）                
-    static final  int MAX_FD = 1024
-```
+
+- select采用轮询的方式扫描文件描述符，全部扫描，随着文件描述符FD数量增多而性能下降            
+
+- 每次调用 select()，需要把 fd 集合从**用户态**拷贝到**内核态**，并进行遍历(消息传递都是从内核到用户空间)
+
+- 最大的缺陷就是单个进程打开的FD有限制，默认是1024   （可修改宏定义，但是效率仍然慢）                
+      
+
+宏定义就是c里面的通用变量设置static final  int MAX_FD = 1024
 
 
 
 
 
-```
+**poll**
+ select() 和 poll() 系统调用的大体一样，处理多个描述符也是使用轮询的方式，根据描述符的状态进行处理,一样需要把 fd 集合从用户态拷贝到内核态，并进行遍历。
 
-```
-
-
-
+最大区别是: poll没有最大文件描述符限制（使用链表的方式存储fd，方便扩展）
 
 
 
+**epoll**
+
+在2.6内核中提出的，对比select和poll，epoll更加灵活，没有描述符限制，用户态拷贝到内核态只需要一次
+
+使用事件通知，通过epoll_ctl注册fd，一旦该fd就绪，内核就会采用callback的回调机制来激活对应的fd
 
 
 
-```
-poll:
-    基本流程：
- select() 和 poll() 系统调用的大体一样，处理多个描述符也是使用轮询的方式，根据描述符的状态进行处理,一样需要把 fd 集合从用户态拷贝到内核态，并进行遍历。最大区别是: poll没有最大文件描述符限制（使用链表的方式存储fd）
-```
+优点：
+- 没fd这个限制，所支持的FD上限是操作系统的最大文件句柄数，1G内存大概支持10万个句柄 
+- 效率提高，使用回调通知而不是轮询的方式，不会随着FD数目的增加效率下降
+- 通过callback机制通知，内核和用户空间mmap同一块内存实现
 
 
 
- 
+Linux内核核心函数
+- epoll_create()  在Linux内核里面申请一个文件系统B+树，返回epoll对象，也是一个fd
+- epoll_ctl() 操作epoll对象，在这个对象里面修改添加删除对应的链接fd, 绑定一个callback函数
+- epoll_wait()  判断并完成对应的IO操作
 
-### 5、 高并发编程必备知识IO多路复用技术Epoll讲解和总结
 
-**简介：高并发编程必备知识IO多路复用技术epoll讲解和总结**
 
-```
-epoll 基本原理：
-      在2.6内核中提出的，对比select和poll，epoll更加灵活，没有描述符限制，用户态拷贝到内核态只需要一次
-      使用事件通知，通过epoll_ctl注册fd，一旦该fd就绪，内核就会采用callback的回调机制来激活对应的fd
-    
-      优点：
-          1)没fd这个限制，所支持的FD上限是操作系统的最大文件句柄数，1G内存大概支持10万个句柄 
-          2)效率提高，使用回调通知而不是轮询的方式，不会随着FD数目的增加效率下降
-          3)通过callback机制通知，内核和用户空间mmap同一块内存实现
-   
-          Linux内核核心函数
-          1)epoll_create()  在Linux内核里面申请一个文件系统 B+树，返回epoll对象，也是一个fd
-          2)epoll_ctl() 操作epoll对象，在这个对象里面修改添加删除对应的链接fd, 绑定一个callback函数
-          3)epoll_wait()  判断并完成对应的IO操作
-   
-      缺点：
-          编程模型比select/poll 复杂
-          例子：100万个连接，里面有1万个连接是活跃，在 select、poll、epoll分别是怎样的表现                
-          select：不修改宏定义，则需要 1000个进程才可以支持 100万连接
-          poll：100万个链接，遍历都响应不过来了，还有空间的拷贝消耗大量的资源
-          epoll: 
-```
+缺点：
+- 编程模型比select/poll 复杂
+- 例子：100万个连接，里面有1万个连接是活跃，在 select、poll、epoll分别是怎样的表现     
+  - 	select：不修改宏定义（1024），则需要 1000个进程才可以支持 100万连接
+  - 	poll：100万个链接，遍历都响应不过来了，还有空间的拷贝消耗大量的资源
+  - 	epoll：不用遍历和拷贝
 
  
 
- 
+### 4. JavaIO演进历史
 
-### 6、Java的I/O演进历史
+- jdk1.4之前是采用同步阻塞模型，也就是BIO 
+  - 大型服务一般采用C或者C++, 因为可以直接操作系统提供的异步IO（AIO）
+- jdk1.4推出NIO，支持非阻塞IO，
+- jdk1.7升级推出NIO2.0，提供AIO的功能，支持文件和网络套接字的异步IO
 
-**简介：讲解java的IO演进历史**
+  
 
-- jdk1.4之前是采用同步阻塞模型，也就是BIO 大型服务一般采用C或者C++, 因为可以直接操作系统提供的异步IO,AIO
-- jdk1.4推出NIO,支持非阻塞IO，jdk1.7升级,推出NIO2.0,提供AIO的功能，支持文件和网络套接字的异步IO
+### 5. Netty线程模型和Reactor模式
 
- 
+**Reactor模式（反应器设计模式）**是一种基于事件驱动的设计模式，在**事件驱动**的应用中，将一个或多个客户的服务请求分离（demultiplex）和调度（dispatch）给应用程序。在事件驱动的应用中，同步地、有序地处理同时接收的多个服务请求 一般出现在高并发系统中，比如Netty，Redis等。
 
- 
+Reactor模式基于事件驱动，适合处理海量的I/O事件，属于同步非阻塞IO(NIO)
 
-### 7、大话Netty线程模型和Reactor模式
 
-**简介：讲解reactor模式 和 Netty线程模型**
 
-- 设计模式——Reactor模式（反应器设计模式），是一种基于事件驱动的设计模式，在事件驱动的应用中，将一个或多个客户的服务请求分离（demultiplex）和调度（dispatch）给应用程序。在事件驱动的应用中，同步地、有序地处理同时接收的多个服务请求 一般出现在高并发系统中，比如Netty，Redis等
-- 优点 1）响应快，不会因为单个同步而阻塞，虽然Reactor本身依然是同步的； 2）编程相对简单，最大程度的避免复杂的多线程及同步问题，并且避免了多线程/进程的切换开销； 3）可扩展性，可以方便的通过增加Reactor实例个数来充分利用CPU资源；
-- 缺点 1）相比传统的简单模型，Reactor增加了一定的复杂性，因而有一定的门槛，并且不易于调试。 2）Reactor模式需要系统底层的的支持，比如Java中的Selector支持，操作系统的select系统调用支持
-- 通俗理解：KTV例子 前台接待，服务人员带领去开机器
-- Reactor模式基于事件驱动，适合处理海量的I/O事件，属于同步非阻塞IO(NIO)
-- Reactor单线程模型(比较少用)
-  - 内容： 1）作为NIO服务端，接收客户端的TCP连接；作为NIO客户端，向服务端发起TCP连接； 2）服务端读请求数据并响应；客户端写请求并读取响应
-  - 使用场景: 对应小业务则适合，编码简单；对于高负载、大并发的应用场景不适合，一个NIO线程处理太多请求，则负载过高，并且可能响应变慢，导致大量请求超时，而且万一线程挂了，则不可用了
-- Reactor多线程模型
-  - 内容：Acceptor不在是一个线程，而是一组NIO线程；IO线程也是一组NIO线程，这样就是两个线程池去处理接入连接和处理IO
-  - 使用场景：满足目前的大部分场景，也是Netty推荐使用的线程模型
+优点 
 
-```
-附属资料：
-  为什么Netty使用NIO而不是AIO，是同步非阻塞还是异步非阻塞？
-            
-  答案：
-  在Linux系统上，AIO的底层实现仍使用EPOLL，与NIO相同，因此在性能上没有明显的优势
-  Netty整体架构是reactor模型，采用epoll机制，所以往深的说，还是IO多路复用模式，所以也可说netty是同步非阻塞模型（看的层次不一样）
+- 响应快，不会因为单个同步而阻塞，虽然Reactor本身依然是同步的； 
+- 编程相对简单，最大程度的避免复杂的多线程及同步问题，并且避免了多线程/进程的切换开销； 
+- 可扩展性，可以方便的通过增加Reactor实例个数来充分利用CPU资源；
 
-  很多人说这是netty是基于Java NIO 类库实现的异步通讯框架
-  特点：异步非阻塞、基于事件驱动，性能高，高可靠性和高可定制性。
-    
-  参考资料：
-   https://github.com/netty/netty/issues/2515
-```
 
- 
 
- 
+缺点 
 
- 
+- 相比传统的简单模型，Reactor增加了一定的复杂性，因而有一定的门槛，并且不易于调试。 
+- Reactor模式需要系统底层的的支持，比如Java中的Selector支持，操作系统的select系统调用支持
 
-**![å°Dè¯¾å ](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGoAAAAiCAMAAACA9LykAAAAY1BMVEUAAAAjJikjJiojJiokJigjJikkJigjJikjJikjJikjJikkJigjJiojJiokJigjJiomJiYmJibWABPWABMmJiYmJiYmJibWABN9Ex99Ex/WABMmJiYjJiqgoKB3d3dcXFxBQUEZhcyGAAAAG3RSTlMAQIC/MGAQz9+fj+8gr3BQv4C/gCCvUN+/gGCwJXa4AAACP0lEQVRIx72W2ZLbIBBFe2EVQrLHnslCZ/n/rwwoOCDH5CWyzxO2VJy63TQlGGAQFbwEhagpOseE8BpmzRL8Cq9h9iJOw2uYWYRneBb67LtTsYiEZwXDlE47s4g8x2VsVplXuJRLGbtzUXap4zOFYvr54x16rIiFo1lS4fu3sIuFzyjhe6qcocftYukJRrQn7c0Bp6a679bcfvHDLpMCEB/jVB8bWonB4EBlq8kDjCvYVF8vlwtpA4UoMauQGeU2kZYYfBhMb9oIV7gjq6YHqrdPb28sQUEGGUsq5/ymQvLi2MUwkX5Y6lRdCgpq6VT8SHUphYphLi8z9KnIol+w4HnUqpZLJ2/+UsWpqBQvVVVcjrYiFwE5RwSZWQHlJauyesA53bAA14RQ6VWxqKIIZD5/gYLnqkJEaxGxpRccj9UNDR+2XfBZFaFgRJUt1uAhw1T1N9Wy9KrAPFSppnJwPu2uQaqT0vWqqpToTaUAJsc82b6rQ0Jz4dJU9s8tSGavQkQKXAdiXmVhBuuriNgRjWL5pprQ9mPlunPKuykIWZ+Zg1ZuBea88oNUgwpalfpQ1G0/ja6lGYoKVJYbzHiLmRke4prLJFN3KKG6+xfhHygFGwYrQ9XUVB8O65nIIBxNf9zPJ9z+ka18/816Hw7vVMZLxsMBTOvwXPikAJ1kJjgEYuzr1/XKnRSLHPlthtZq08rXYSVz7BendmIJi+7aPJJ+ixCOZY3btuw3ScMjHI9ZvZUdzq8GngYiVTQeq/kFPvQz03kWbEEAAAAASUVORK5CYII=) 愿景："让编程不在难学，让技术与生活更加有趣" 更多教程请访问 xdclass.net**
+
+
+-----
+
+
+
+**Reactor单线程模型(比较少用)**
+
+内容： 
+
+- 作为NIO服务端，接收客户端的TCP连接；作为NIO客户端，向服务端发起TCP连接； 
+- 服务端读请求数据并响应；客户端写请求并读取响应
+
+
+
+使用场景: 
+
+对应小业务则适合，编码简单；对于高负载、大并发的应用场景不适合
+
+一个NIO线程处理太多请求，则负载过高，并且可能响应变慢，导致大量请求超时，而且万一线程挂了，则不可用了
+
+
+
+-----
+
+
+
+**Reactor多线程模型**
+
+内容：
+
+一个Acceptor线程，一组NIO线程，一般是使用自带的线程池，包含一个任务队列和多个可用的线程
+
+
+
+使用场景：可满足大多数场景，但是当Acceptor需要做复杂操作的时候，比如认证等耗时操作，再高并发情况下则也会有性能问题
+
+
+
+-----
+
+
+
+**Reactor主从线程模型**
+
+内容：
+
+Acceptor不再是一个线程，而是一组NIO线程；IO线程也是一组NIO线程，这样就是两个线程池去处理接入连接和处理IO
+
+
+
+使用场景：满足目前的大部分场景，也是Netty推荐使用的线程模型
+
+
 
 ------
 
+
+
+**为什么Netty使用NIO而不是AIO**，是同步非阻塞还是异步非阻塞？
+
+在Linux系统上，AIO的底层实现仍使用EPOLL，与NIO相同，因此在性能上没有明显的优势
+
+Netty整体架构是reactor模型，采用epoll机制，所以往深的说，还是IO多路复用模式，所以也可说netty是同步非阻塞模型（看的层次不一样）
+
+很多人说这是netty是基于Java NIO 类库实现的异步通讯框架
+
+特点：异步非阻塞、基于事件驱动，性能高，高可靠性和高可定制性。
+
+参考资料：https://github.com/netty/netty/issues/2515
+
+
+
+
+
+## 四. Netty简单案例
+
  
 
-## 第四章：高并发网络编程Netty的第一个案例
+### 1. Echo服务和Netty项目搭建
 
- 
+Echo服务：就是一个应答服务（回显服务器），客户端发送什么数据，服务端就响应的对应的数据是一个非常有的用于调试和检测的服务
 
-### 1、讲解什么是Echo服务和Netty项目搭建
 
-**简介：讲解什么是Echo服务和快速创建Netty项目**
 
-- 什么是Echo服务：就是一个应答服务（回显服务器），客户端发送什么数据，服务端就响应的对应的数据是一个非常有的用于调试和检测的服务
 - IDEA + Maven + jdk8 netty依赖包
 - maven地址：https://mvnrepository.com/artifact/io.netty/netty-all/4.1.32.Final
 
- 
+ ```xml
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-all</artifactId>
+            <version>4.1.32.Final</version>
+        </dependency>
+ ```
+
+
 
  
 
-### 2、Netty实战之Echo服务-服务端程序编写实战
+### 2. Netty实战之Echo服务-服务端程序编写实战
 
 **简介：讲解Echo服务-服务端程序编写实战，对应的启动类和handler处理器**
 
@@ -426,7 +551,7 @@ epoll 基本原理：
 
  
 
-**![å°Dè¯¾å ](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGoAAAAiCAMAAACA9LykAAAAY1BMVEUAAAAjJikjJiojJiokJigjJikkJigjJikjJikjJikjJikkJigjJiojJiokJigjJiomJiYmJibWABPWABMmJiYmJiYmJibWABN9Ex99Ex/WABMmJiYjJiqgoKB3d3dcXFxBQUEZhcyGAAAAG3RSTlMAQIC/MGAQz9+fj+8gr3BQv4C/gCCvUN+/gGCwJXa4AAACP0lEQVRIx72W2ZLbIBBFe2EVQrLHnslCZ/n/rwwoOCDH5CWyzxO2VJy63TQlGGAQFbwEhagpOseE8BpmzRL8Cq9h9iJOw2uYWYRneBb67LtTsYiEZwXDlE47s4g8x2VsVplXuJRLGbtzUXap4zOFYvr54x16rIiFo1lS4fu3sIuFzyjhe6qcocftYukJRrQn7c0Bp6a679bcfvHDLpMCEB/jVB8bWonB4EBlq8kDjCvYVF8vlwtpA4UoMauQGeU2kZYYfBhMb9oIV7gjq6YHqrdPb28sQUEGGUsq5/ymQvLi2MUwkX5Y6lRdCgpq6VT8SHUphYphLi8z9KnIol+w4HnUqpZLJ2/+UsWpqBQvVVVcjrYiFwE5RwSZWQHlJauyesA53bAA14RQ6VWxqKIIZD5/gYLnqkJEaxGxpRccj9UNDR+2XfBZFaFgRJUt1uAhw1T1N9Wy9KrAPFSppnJwPu2uQaqT0vWqqpToTaUAJsc82b6rQ0Jz4dJU9s8tSGavQkQKXAdiXmVhBuuriNgRjWL5pprQ9mPlunPKuykIWZ+Zg1ZuBea88oNUgwpalfpQ1G0/ja6lGYoKVJYbzHiLmRke4prLJFN3KKG6+xfhHygFGwYrQ9XUVB8O65nIIBxNf9zPJ9z+ka18/816Hw7vVMZLxsMBTOvwXPikAJ1kJjgEYuzr1/XKnRSLHPlthtZq08rXYSVz7BendmIJi+7aPJJ+ixCOZY3btuw3ScMjHI9ZvZUdzq8GngYiVTQeq/kFPvQz03kWbEEAAAAASUVORK5CYII=) 愿景："让编程不在难学，让技术与生活更加有趣" 更多教程请访问 xdclass.net**
+**
 
 ------
 
@@ -577,7 +702,7 @@ epoll 基本原理：
 
  
 
-**![å°Dè¯¾å ](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGoAAAAiCAMAAACA9LykAAAAY1BMVEUAAAAjJikjJiojJiokJigjJikkJigjJikjJikjJikjJikkJigjJiojJiokJigjJiomJiYmJibWABPWABMmJiYmJiYmJibWABN9Ex99Ex/WABMmJiYjJiqgoKB3d3dcXFxBQUEZhcyGAAAAG3RSTlMAQIC/MGAQz9+fj+8gr3BQv4C/gCCvUN+/gGCwJXa4AAACP0lEQVRIx72W2ZLbIBBFe2EVQrLHnslCZ/n/rwwoOCDH5CWyzxO2VJy63TQlGGAQFbwEhagpOseE8BpmzRL8Cq9h9iJOw2uYWYRneBb67LtTsYiEZwXDlE47s4g8x2VsVplXuJRLGbtzUXap4zOFYvr54x16rIiFo1lS4fu3sIuFzyjhe6qcocftYukJRrQn7c0Bp6a679bcfvHDLpMCEB/jVB8bWonB4EBlq8kDjCvYVF8vlwtpA4UoMauQGeU2kZYYfBhMb9oIV7gjq6YHqrdPb28sQUEGGUsq5/ymQvLi2MUwkX5Y6lRdCgpq6VT8SHUphYphLi8z9KnIol+w4HnUqpZLJ2/+UsWpqBQvVVVcjrYiFwE5RwSZWQHlJauyesA53bAA14RQ6VWxqKIIZD5/gYLnqkJEaxGxpRccj9UNDR+2XfBZFaFgRJUt1uAhw1T1N9Wy9KrAPFSppnJwPu2uQaqT0vWqqpToTaUAJsc82b6rQ0Jz4dJU9s8tSGavQkQKXAdiXmVhBuuriNgRjWL5pprQ9mPlunPKuykIWZ+Zg1ZuBea88oNUgwpalfpQ1G0/ja6lGYoKVJYbzHiLmRke4prLJFN3KKG6+xfhHygFGwYrQ9XUVB8O65nIIBxNf9zPJ9z+ka18/816Hw7vVMZLxsMBTOvwXPikAJ1kJjgEYuzr1/XKnRSLHPlthtZq08rXYSVz7BendmIJi+7aPJJ+ixCOZY3btuw3ScMjHI9ZvZUdzq8GngYiVTQeq/kFPvQz03kWbEEAAAAASUVORK5CYII=) 愿景："让编程不在难学，让技术与生活更加有趣" 更多教程请访问 xdclass.net**
+**
 
 ------
 
@@ -693,7 +818,7 @@ epoll 基本原理：
 
  
 
-**![å°Dè¯¾å ](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGoAAAAiCAMAAACA9LykAAAAY1BMVEUAAAAjJikjJiojJiokJigjJikkJigjJikjJikjJikjJikkJigjJiojJiokJigjJiomJiYmJibWABPWABMmJiYmJiYmJibWABN9Ex99Ex/WABMmJiYjJiqgoKB3d3dcXFxBQUEZhcyGAAAAG3RSTlMAQIC/MGAQz9+fj+8gr3BQv4C/gCCvUN+/gGCwJXa4AAACP0lEQVRIx72W2ZLbIBBFe2EVQrLHnslCZ/n/rwwoOCDH5CWyzxO2VJy63TQlGGAQFbwEhagpOseE8BpmzRL8Cq9h9iJOw2uYWYRneBb67LtTsYiEZwXDlE47s4g8x2VsVplXuJRLGbtzUXap4zOFYvr54x16rIiFo1lS4fu3sIuFzyjhe6qcocftYukJRrQn7c0Bp6a679bcfvHDLpMCEB/jVB8bWonB4EBlq8kDjCvYVF8vlwtpA4UoMauQGeU2kZYYfBhMb9oIV7gjq6YHqrdPb28sQUEGGUsq5/ymQvLi2MUwkX5Y6lRdCgpq6VT8SHUphYphLi8z9KnIol+w4HnUqpZLJ2/+UsWpqBQvVVVcjrYiFwE5RwSZWQHlJauyesA53bAA14RQ6VWxqKIIZD5/gYLnqkJEaxGxpRccj9UNDR+2XfBZFaFgRJUt1uAhw1T1N9Wy9KrAPFSppnJwPu2uQaqT0vWqqpToTaUAJsc82b6rQ0Jz4dJU9s8tSGavQkQKXAdiXmVhBuuriNgRjWL5pprQ9mPlunPKuykIWZ+Zg1ZuBea88oNUgwpalfpQ1G0/ja6lGYoKVJYbzHiLmRke4prLJFN3KKG6+xfhHygFGwYrQ9XUVB8O65nIIBxNf9zPJ9z+ka18/816Hw7vVMZLxsMBTOvwXPikAJ1kJjgEYuzr1/XKnRSLHPlthtZq08rXYSVz7BendmIJi+7aPJJ+ixCOZY3btuw3ScMjHI9ZvZUdzq8GngYiVTQeq/kFPvQz03kWbEEAAAAASUVORK5CYII=) 愿景："让编程不在难学，让技术与生活更加有趣" 更多教程请访问 xdclass.net**
+**
 
 ------
 
@@ -810,7 +935,7 @@ failFast 是否快速失败
 
  
 
-**![å°Dè¯¾å ](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGoAAAAiCAMAAACA9LykAAAAY1BMVEUAAAAjJikjJiojJiokJigjJikkJigjJikjJikjJikjJikkJigjJiojJiokJigjJiomJiYmJibWABPWABMmJiYmJiYmJibWABN9Ex99Ex/WABMmJiYjJiqgoKB3d3dcXFxBQUEZhcyGAAAAG3RSTlMAQIC/MGAQz9+fj+8gr3BQv4C/gCCvUN+/gGCwJXa4AAACP0lEQVRIx72W2ZLbIBBFe2EVQrLHnslCZ/n/rwwoOCDH5CWyzxO2VJy63TQlGGAQFbwEhagpOseE8BpmzRL8Cq9h9iJOw2uYWYRneBb67LtTsYiEZwXDlE47s4g8x2VsVplXuJRLGbtzUXap4zOFYvr54x16rIiFo1lS4fu3sIuFzyjhe6qcocftYukJRrQn7c0Bp6a679bcfvHDLpMCEB/jVB8bWonB4EBlq8kDjCvYVF8vlwtpA4UoMauQGeU2kZYYfBhMb9oIV7gjq6YHqrdPb28sQUEGGUsq5/ymQvLi2MUwkX5Y6lRdCgpq6VT8SHUphYphLi8z9KnIol+w4HnUqpZLJ2/+UsWpqBQvVVVcjrYiFwE5RwSZWQHlJauyesA53bAA14RQ6VWxqKIIZD5/gYLnqkJEaxGxpRccj9UNDR+2XfBZFaFgRJUt1uAhw1T1N9Wy9KrAPFSppnJwPu2uQaqT0vWqqpToTaUAJsc82b6rQ0Jz4dJU9s8tSGavQkQKXAdiXmVhBuuriNgRjWL5pprQ9mPlunPKuykIWZ+Zg1ZuBea88oNUgwpalfpQ1G0/ja6lGYoKVJYbzHiLmRke4prLJFN3KKG6+xfhHygFGwYrQ9XUVB8O65nIIBxNf9zPJ9z+ka18/816Hw7vVMZLxsMBTOvwXPikAJ1kJjgEYuzr1/XKnRSLHPlthtZq08rXYSVz7BendmIJi+7aPJJ+ixCOZY3btuw3ScMjHI9ZvZUdzq8GngYiVTQeq/kFPvQz03kWbEEAAAAASUVORK5CYII=) 愿景："让编程不在难学，让技术与生活更加有趣" 更多教程请访问 xdclass.net**
+**
 
 ------
 
@@ -883,7 +1008,7 @@ Builder构造器模式：ServerBootstap
 
  
 
-**![å°Dè¯¾å ](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGoAAAAiCAMAAACA9LykAAAAY1BMVEUAAAAjJikjJiojJiokJigjJikkJigjJikjJikjJikjJikkJigjJiojJiokJigjJiomJiYmJibWABPWABMmJiYmJiYmJibWABN9Ex99Ex/WABMmJiYjJiqgoKB3d3dcXFxBQUEZhcyGAAAAG3RSTlMAQIC/MGAQz9+fj+8gr3BQv4C/gCCvUN+/gGCwJXa4AAACP0lEQVRIx72W2ZLbIBBFe2EVQrLHnslCZ/n/rwwoOCDH5CWyzxO2VJy63TQlGGAQFbwEhagpOseE8BpmzRL8Cq9h9iJOw2uYWYRneBb67LtTsYiEZwXDlE47s4g8x2VsVplXuJRLGbtzUXap4zOFYvr54x16rIiFo1lS4fu3sIuFzyjhe6qcocftYukJRrQn7c0Bp6a679bcfvHDLpMCEB/jVB8bWonB4EBlq8kDjCvYVF8vlwtpA4UoMauQGeU2kZYYfBhMb9oIV7gjq6YHqrdPb28sQUEGGUsq5/ymQvLi2MUwkX5Y6lRdCgpq6VT8SHUphYphLi8z9KnIol+w4HnUqpZLJ2/+UsWpqBQvVVVcjrYiFwE5RwSZWQHlJauyesA53bAA14RQ6VWxqKIIZD5/gYLnqkJEaxGxpRccj9UNDR+2XfBZFaFgRJUt1uAhw1T1N9Wy9KrAPFSppnJwPu2uQaqT0vWqqpToTaUAJsc82b6rQ0Jz4dJU9s8tSGavQkQKXAdiXmVhBuuriNgRjWL5pprQ9mPlunPKuykIWZ+Zg1ZuBea88oNUgwpalfpQ1G0/ja6lGYoKVJYbzHiLmRke4prLJFN3KKG6+xfhHygFGwYrQ9XUVB8O65nIIBxNf9zPJ9z+ka18/816Hw7vVMZLxsMBTOvwXPikAJ1kJjgEYuzr1/XKnRSLHPlthtZq08rXYSVz7BendmIJi+7aPJJ+ixCOZY3btuw3ScMjHI9ZvZUdzq8GngYiVTQeq/kFPvQz03kWbEEAAAAASUVORK5CYII=) 愿景："让编程不在难学，让技术与生活更加有趣" 更多教程请访问 xdclass.net**
+**
 
 ------
 
@@ -975,7 +1100,7 @@ Builder构造器模式：ServerBootstap
 
  
 
-**![å°Dè¯¾å ](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGoAAAAiCAMAAACA9LykAAAAY1BMVEUAAAAjJikjJiojJiokJigjJikkJigjJikjJikjJikjJikkJigjJiojJiokJigjJiomJiYmJibWABPWABMmJiYmJiYmJibWABN9Ex99Ex/WABMmJiYjJiqgoKB3d3dcXFxBQUEZhcyGAAAAG3RSTlMAQIC/MGAQz9+fj+8gr3BQv4C/gCCvUN+/gGCwJXa4AAACP0lEQVRIx72W2ZLbIBBFe2EVQrLHnslCZ/n/rwwoOCDH5CWyzxO2VJy63TQlGGAQFbwEhagpOseE8BpmzRL8Cq9h9iJOw2uYWYRneBb67LtTsYiEZwXDlE47s4g8x2VsVplXuJRLGbtzUXap4zOFYvr54x16rIiFo1lS4fu3sIuFzyjhe6qcocftYukJRrQn7c0Bp6a679bcfvHDLpMCEB/jVB8bWonB4EBlq8kDjCvYVF8vlwtpA4UoMauQGeU2kZYYfBhMb9oIV7gjq6YHqrdPb28sQUEGGUsq5/ymQvLi2MUwkX5Y6lRdCgpq6VT8SHUphYphLi8z9KnIol+w4HnUqpZLJ2/+UsWpqBQvVVVcjrYiFwE5RwSZWQHlJauyesA53bAA14RQ6VWxqKIIZD5/gYLnqkJEaxGxpRccj9UNDR+2XfBZFaFgRJUt1uAhw1T1N9Wy9KrAPFSppnJwPu2uQaqT0vWqqpToTaUAJsc82b6rQ0Jz4dJU9s8tSGavQkQKXAdiXmVhBuuriNgRjWL5pprQ9mPlunPKuykIWZ+Zg1ZuBea88oNUgwpalfpQ1G0/ja6lGYoKVJYbzHiLmRke4prLJFN3KKG6+xfhHygFGwYrQ9XUVB8O65nIIBxNf9zPJ9z+ka18/816Hw7vVMZLxsMBTOvwXPikAJ1kJjgEYuzr1/XKnRSLHPlthtZq08rXYSVz7BendmIJi+7aPJJ+ixCOZY3btuw3ScMjHI9ZvZUdzq8GngYiVTQeq/kFPvQz03kWbEEAAAAASUVORK5CYII=) 愿景："让编程不在难学，让技术与生活更加有趣" 更多教程请访问 xdclass.net**
+**
 
 ------
 
