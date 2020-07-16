@@ -1129,6 +1129,10 @@ JKD8的版本取消Segment这个分段锁数据结构，底层也是使用Node�
 
 ## 三. 并发编程
 
+[Java并发编程笔记](https://github.com/zrinGithub/Document/blob/master/%E5%9F%BA%E7%A1%80%E5%AD%A6%E4%B9%A0/java%E5%B9%B6%E5%8F%91/java%E5%B9%B6%E5%8F%91%E7%BC%96%E7%A8%8B%E7%AC%94%E8%AE%B0.md)
+
+
+
 ### 1. 基础
 
 #### 线程、进程、协程的区别
@@ -1600,7 +1604,7 @@ JAVA的线程的优先级，以1到10的整数指定。当多个线程可以运�
 
 
 
-**共享锁**：也叫S锁/读锁，能查看但无法修改和删除的一种数据锁，加锁后其它用户可以并发读取、查询数据，但不能修改，增加，删除数据，该锁可被多个线程所持有，用于资源数据共享
+**共享锁**：也叫S锁/读锁，能查看但无法修改和删除的一种数据锁，加锁后其它用户可以并发读取、查询数据，但不能修改，增加，删除数据，该锁可被多个线程所持有，用于资源数据共享。比如`ReadWriteLock`的读锁支持多个线程同时进行读取操作。
 
 
 
@@ -1608,13 +1612,343 @@ JAVA的线程的优先级，以1到10的整数指定。当多个线程可以运�
 
 
 
-**死锁**：两个或两个以上的线程在执行过程中，由于竞争资源或者由于彼此通信而造成的一种阻塞的现象，若无外力作用，它们都将无法让程序进行下去
+**死锁**：两个或两个以上的线程在执行过程中，由于竞争资源或者由于彼此通信而造成的一种阻塞的现象，若无外力作用，它们都将无法让程序进行下去。
 
 
 
-下面三种是Jvm为了提高锁的获取与释放效率而做的优化 针对Synchronized的锁升级，锁的状态是通过对象监视器在对象头中的字段来表明，是不可逆的过程，
-偏向锁：一段同步代码一直被一个线程所访问，那么该线程会自动获取锁，获取锁的代价更低，
-轻量级锁：当锁是偏向锁的时候，被其他线程访问，偏向锁就会升级为轻量级锁，其他线程会通过自旋的形式尝试获取锁，但不会阻塞，且性能会高点
-重量级锁：当锁为轻量级锁的时候，其他线程虽然是自旋，但自旋不会一直循环下去，当自旋一定次数的时候且还没有获取到锁，就会进入阻塞，该锁升级为重量级锁，重量级锁会让其他申请的线程进入阻塞，性能也会降低
+-----
+
+
+
+下面三种是Jvm为了提高锁的获取与释放效率而做的优化 针对内置锁**Synchronized**的锁升级，锁的状态是通过对象监视器在对象头中的字段来表明，是不可逆的过程。
+
+
+
+**偏向锁**：一段同步代码一直被一个线程所访问，那么该线程会自动获取锁，获取锁的代价更低，
+**轻量级锁**：当锁是偏向锁的时候，被其他线程访问，偏向锁就会升级为轻量级锁，其他线程会通过自旋的形式尝试获取锁，但不会阻塞，且性能会高点
+**重量级锁**：当锁为轻量级锁的时候，其他线程虽然是自旋，但自旋不会一直循环下去，当自旋一定次数的时候且还没有获取到锁，就会进入阻塞，该锁升级为重量级锁，重量级锁会让其他申请的线程进入阻塞，性能也会降低
 
 分段锁、行锁、表锁
+
+
+
+#### synchronized
+
+`synchronized`是解决线程安全的问题，常用在 同步普通方法、静态方法、代码块 中
+
+**非公平、可重入**
+
+
+
+每个对象有一个锁和一个等待队列，锁只能被一个线程持有，其他需要锁的线程需要阻塞等待。锁被释放后，对象会从队列中取出一个并唤醒，唤醒哪个线程是不确定的，不保证公平性
+
+
+
+两种形式：
+
+**方法**：生成的字节码文件中会多一个 **ACC_SYNCHRONIZED** 标志位，当一个线程访问方法时，会去检查是否存在**ACC_SYNCHRONIZED**标识，如果存在，执行线程将先获取**monitor**，获取成功之后才能执行方法体，方法执行完后再释放**monitor**。在方法执行期间，其他任何线程都无法再获得同一个**monitor**对象，也叫隐式同步
+
+**代码块**：加了`synchronized`关键字的代码段，生成的字节码文件会多出 **monitorenter** 和 **monitorexit** 两条指令，每个**monitor**维护着一个记录着拥有次数的计数器, 未被拥有的**monitor**的该计数器为0，当一个线程获执行**monitorenter**后，该计数器自增1；当同一个线程执行**monitorexit**指令的时候，计数器再自减1。当计数器为0的时候，**monitor**将被释放，也叫显式同步。
+
+两种本质上没有区别，底层都是通过**monitor**来实现同步, 只是方法的同步是一种隐式的方式来实现，无需通过字节码来完成。
+
+
+
+```shell
+javac XXX.java
+查看字节码
+javap -v XXX.class
+```
+
+
+
+
+
+#### CAS
+
+全称是**Compare And Swap**，即比较再交换，是实现并发应用到的一种技术
+
+底层通过Unsafe类实现原子性操作操作包含三个操作数 —— 内存地址（V）、预期原值（A）和新值(B)。 
+
+如果内存位置的值与预期原值相匹配，那么处理器会自动将该位置值更新为新值 ，若果在第一轮循环中，a线程获取地址里面的值被b线程修改了，那么a线程需要自旋（这个看具体实现），到下次循环才有可能机会执行。
+
+```java
+	//这是Unsafe里面的实现，这里的while就是为了自旋
+	@HotSpotIntrinsicCandidate
+    public final long getAndAddLong(Object o, long offset, long delta) {
+        long v;
+        do {
+            v = getLongVolatile(o, offset);
+        } while (!weakCompareAndSetLong(o, offset, v, v + delta));
+        return v;
+    }
+```
+
+
+
+
+
+CAS这个是属于乐观锁，性能较悲观锁有很大的提高。
+
+`AtomicXXX` 等原子类底层就是CAS实现，一定程度比`synchonized`好，因为后者是悲观锁
+
+```java
+public class TestUnSafe {
+    static Unsafe unSafe;
+
+    static Long stateOffset;
+
+    private volatile long state = 0;
+
+    static {
+        try {
+            final Field field = Unsafe.class.getDeclaredField("theUnsafe");
+            field.setAccessible(true);
+            //因为是静态变量，直接取就可以
+            unSafe = (Unsafe) field.get(null);
+            //获取state变量在类TestUnSafe中的偏移位置
+            stateOffset = unSafe.objectFieldOffset(TestUnSafe.class.getDeclaredField("state"));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void main(String[] args) {
+        TestUnSafe test = new TestUnSafe();
+        boolean result = unSafe.compareAndSwapLong(test, stateOffset, 0, 1);
+        System.out.println(result);
+    }
+}
+```
+
+
+
+cas问题：
+
+- 自旋时间长CPU利用率增加，CAS里面是一个循环判断的过程，如果线程一直没有获取到状态，cpu资源会一直被占用
+- ABA问题
+
+#### ABA问题
+
+如果一个变量V初次读取是A值，并且在准备赋值的时候也是A值，那就能说明A值没有被修改过吗？
+
+其实是不能的，因为变量V可能被其他线程改回A值（A-B-A），结果就是会导致CAS操作误认为从来没被修改过，从而赋值给V，在一些压栈操作的时候会产生问题（栈顶的数据没变但是实际已经操作过了）。
+
+
+
+-----
+
+
+
+给变量加一个版本号即可，在比较的时候不仅要比较当前变量的值 还需要比较当前变量的版本号。
+
+
+
+在java5中，已经提供了`AtomicStampedReference`来解决问题，检查当前引用是否等于预期引用，其次检查当前标志是否等于预期标志，如果都相等就会以原子的方式将引用和标志都设置为新值
+
+```java
+	//AtomicStampedReference cas源码
+	public boolean compareAndSet(V   expectedReference,
+                                 V   newReference,
+                                 int expectedStamp,
+                                 int newStamp) {
+        Pair<V> current = pair;
+        return
+            expectedReference == current.reference &&
+            expectedStamp == current.stamp &&
+            ((newReference == current.reference &&
+              newStamp == current.stamp) ||
+             casPair(current, Pair.of(newReference, newStamp)));
+    }
+```
+
+
+
+
+
+### 3. 并发编程底层
+
+#### AQS
+
+AQS的全称为（**AbstractQueuedSynchronizer**），这个类在java.util.concurrent.locks包下面。它是一个Java提高的底层同步工具类，比如`CountDownLatch`、`ReentrantLock`，`Semaphore`，`ReentrantReadWriteLock`，`SynchronousQueue`，`FutureTask`等等皆是基于AQS的
+
+
+
+简单来说：是用一个int类型的变量（`state`）表示同步状态，并提供了一系列的CAS操作来管理这个同步状态：
+
+- state（用于计数器，类似gc的回收计数器）
+- 线程标记（当前线程是谁加锁的），
+- 阻塞队列（用于存放其他未拿到锁的线程)
+
+
+
+例子：线程A调用了lock()方法，通过CAS将state赋值为1，然后将该锁标记为线程A加锁。如果线程A还未释放锁时，线程B来请求，会查询锁标记的状态，因为当前的锁标记为 线程A，线程B未能匹配上，所以线程B会加入阻塞队列，直到线程A触发了 unlock() 方法，这时线程B才有机会去拿到锁，但是不一定肯定拿到
+
+
+
+-----
+
+`acquire(int arg)` 
+
+`tryAcquire()`尝试直接去获取资源，如果成功则直接返回,AQS里面未实现但没有定义成abstract，因为独占模式下只用实现tryAcquire-tryRelease，而共享模式下只用实现tryAcquireShared-tryReleaseShared，类似设计模式里面的适配器模式
+
+
+
+`addWaiter()` 根据不同模式将线程加入等待队列的尾部，有Node.EXCLUSIVE互斥模式、Node.SHARED共享模式；如果队列不为空，则以通过compareAndSetTail方法以CAS将当前线程节点加入到等待队列的末尾。否则通过enq(node)方法初始化一个等待队列
+
+​    
+
+`acquireQueued()`使线程在等待队列中获取资源，一直获取到资源后才返回,如果在等待过程中被中断，则返回true，否则返回false
+
+`release(int arg)`独占模式下线程释放指定量的资源，里面是根据tryRelease()的返回值来判断该线程是否已经完成释放掉资源了；在自义定同步器在实现时，如果已经彻底释放资源(state=0)，要返回true，否则返回false
+    
+
+unparkSuccessor方法用于唤醒等待队列中下一个线程
+
+-----
+
+AQS几种同步方式：
+
+独占式: 比如`ReentrantLock`
+
+共享式：比如`Semaphore`
+
+存在组合：组合式的如`ReentrantReadWriteLock`，AQS为使用提供了底层支撑，使用者可以自由组装实现
+
+
+
+
+1. `boolean tryAcquire(int arg) `
+2. `boolean tryRelease(int arg) `
+3. `int tryAcquireShared(int arg) `
+4. `boolean tryReleaseShared(int arg) `
+5. `boolean isHeldExclusively()`
+
+不需要全部实现，根据获取的锁的种类可以选择实现不同的方法，比如
+实现支持独占锁的同步器应该实现`tryAcquire`、`tryRelease`、`isHeldExclusively`
+实现支持共享获取的同步器应该实现`tryAcquireShared`、`tryReleaseShared`、`isHeldExclusively`
+
+
+
+#### ReentrantLock源码以及和Synchronized区别
+
+```java
+public class ReentrantLock implements Lock, java.io.Serializable {
+    abstract static class Sync extends AbstractQueuedSynchronizer {}
+    
+    static final class NonfairSync extends Sync {
+        protected final boolean tryAcquire(int acquires){}
+    }
+    
+    static final class FairSync extends Sync {
+        protected final boolean tryAcquire(int acquires) {
+    }
+}
+```
+
+
+
+```java
+Lock接口定义的方法：
+    lock
+    lockInterruptibly
+    tryLock
+    tryLock
+    unlock
+    newCondition
+```
+
+
+
+-----
+
+
+
+ReentrantLock和synchronized使用的场景是什么，实现机制有什么不同？
+
+```
+ReentrantLock和synchronized都是独占锁
+
+synchronized：
+    1、是悲观锁会引起其他线程阻塞，java内置关键字
+    2、无法判断是否获取锁的状态，锁可重入、不可中断、只能是非公平
+    3、加锁解锁的过程是隐式的,用户不用手动操作,优点是操作简单但显得不够灵活
+    4、一般并发场景使用足够、可以放在被递归执行的方法上,且不用担心线程最后能否正确释放锁
+    5、synchronized操作的应该是对象头中mark word	
+
+ReentrantLock：
+    1、是个Lock接口的实现类，是乐观锁，
+    2、可以判断是否获取到锁，可重入、可判断、可公平可不公平
+    3、需要手动加锁和解锁,且 解锁的操作尽量要放在finally代码块中,保证线程正确释放锁
+    4、在复杂的并发场景中使用在重入时要却确保重复获取锁的次数必须和重复释放锁的次数一样，否则可能导致       其他线程无法获得该锁。
+    5、创建的时候通过传进参数true创建公平锁,如果传入的是false或没传参数则创建的是非公平锁
+    6、底层不同是AQS的state和FIFO队列来控制加锁
+```
+
+
+
+#### ReentrantReadWriteLock
+
+```
+1、读写锁接口 ReadWriteLock 接口的一个具体实现，实现了读写锁的分离，
+2、支持公平和非公平，底层也是基于AQS实现
+3、允许从写锁降级为读锁
+	流程：先获取写锁，然后获取读锁，最后释放写锁；但不能从读锁升级到写锁
+        
+4、重入：读锁后还可以获取读锁；获取了写锁之后既可以再次获取写锁又可以获取读锁
+    核心：读锁是共享的，写锁是独占的。 读和读之间不会互斥，读和写、写和读、写和写之间才会互斥，主要是提升了读写的性能
+    
+
+ReentrantLock是独占锁且可重入的，相比synchronized而言功能更加丰富也更适合复杂的并发场景，但是也有弊端，假如有两个线程A/B访问数据，加锁是为了防止线程A在写数据， 线程B在读数据造成的数据不一致； 但线程A在读数据，线程C也在读数据，读数据是不会改变数据没有必要加锁，但是还是加锁了，降低了程序的性能，所以就有了ReadWriteLock读写锁接口
+
+
+场景：读多写少，比如设计一个缓存组件 或 提高Collection的并发性
+```
+
+
+
+
+
+#### 并发编程里面解决生产消费者模型
+
+核心：要保证生产者不会在缓冲区满时放入数据，消费者也不会在缓冲区空时消耗数据
+常用的同步方法是采用信号或加锁机制
+
+1. wait() / notify()方法
+
+2. await() / signal()方法用ReentrantLock和Condition实现等待/通知模型
+
+3. Semaphore信号量
+
+4. BlockingQueue阻塞队列
+
+   1. ArrayBlockingQueue
+
+   2. LinkedBlockingQueue
+
+      put方法用来向队尾存入元素，如果队列满，则阻塞
+      take方法用来从队首取元素，如果队列为空，则阻塞
+
+
+
+ 
+
+ 
+
+ #### 并发队列
+
+常见的阻塞队列
+
+`ArrayBlockingQueue`：基于数组实现的一个阻塞队列，需要指定容量大小，FIFO先进先出顺序
+
+`LinkedBlockingQueue`：基于链表实现的一个阻塞队列，如果不指定容量大小，默认 Integer.MAX_VALUE, FIFO先进先出顺序，一个支持优先级的无界阻塞队列，默认情况下元素采用自然顺序升序排序，也可以自定义排序实现  java.lang.Comparable接口
+
+`DelayQueue`：延迟队列，在指定时间才能获取队列元素的功能，队列头元素是最接近过期的元素，里面的对象必须实现 java.util.concurrent.Delayed 接口并实现CompareTo和getDelay方法
+
+
+
+`BlockingQueue`：JUC提供了线程安全的队列访问的接口，并发包下很多高级同步类的实现都是基于阻塞队列实现的
+
+1. 当阻塞队列进行插入数据时，如果队列已满，线程将会阻塞等待直到队列非满
+2. 从阻塞队列读数据时，如果队列为空，线程将会阻塞等待直到队列里面是非空的时候
+
