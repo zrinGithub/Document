@@ -393,6 +393,7 @@ Linux内核核心函数
 ### 4. JavaIO演进历史
 
 - jdk1.4之前是采用同步阻塞模型，也就是BIO 
+  
   - 大型服务一般采用C或者C++, 因为可以直接操作系统提供的异步IO（AIO）
 - jdk1.4推出NIO，支持非阻塞IO，
 - jdk1.7升级推出NIO2.0，提供AIO的功能，支持文件和网络套接字的异步IO
@@ -520,79 +521,339 @@ Echo服务：就是一个应答服务（回显服务器），客户端发送什�
 
  
 
-### 2. Netty实战之Echo服务-服务端程序编写实战
+### 2. Echo服务-服务端
 
-**简介：讲解Echo服务-服务端程序编写实战，对应的启动类和handler处理器**
+EchoServer:
+
+```java
+public class EchoServer {
+    private int port;
+
+    public EchoServer(int port) {
+        this.port = port;
+    }
+
+    public void run() throws InterruptedException {
+        //配置服务端线程组
+        EventLoopGroup bossGroup = new NioEventLoopGroup();
+        EventLoopGroup workGroup = new NioEventLoopGroup();
+        try {
+            //服务启动类
+            ServerBootstrap serverBootstrap = new ServerBootstrap();
+            serverBootstrap.group(bossGroup, workGroup)
+                    .channel(NioServerSocketChannel.class)
+                    .childHandler(new ChannelInitializer<SocketChannel>() {
+                        @Override
+                        protected void initChannel(SocketChannel socketChannel) throws Exception {
+                            socketChannel.pipeline().addLast(new EchoServerHandler());
+                        }
+                    });  //配置启动类
+            System.out.println("start Echo Server...................");
+            //绑定端口，同步等待绑定成功
+            ChannelFuture channelFuture = serverBootstrap.bind(port).sync();
+
+            //等待服务端监听端口关闭
+            channelFuture.channel().closeFuture().sync();
+        } finally {
+            //退出释放线程池
+            workGroup.shutdownGracefully();
+            bossGroup.shutdownGracefully();
+        }
+
+    }
+
+    public static void main(String[] args) throws InterruptedException {
+        new EchoServer(8080).run();
+    }
+}
+```
+
+
+
+EchoServerHandler:
+
+ ```java
+public class EchoServerHandler extends ChannelInboundHandlerAdapter {
+    @Override
+    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+        ByteBuf data = (ByteBuf) msg;
+        System.out.println("EchoServerHandler channelRead：" + data.toString(UTF_8));
+        ctx.writeAndFlush(data);
+    }
+
+    @Override
+    public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
+        System.out.println(this.getClass().getName() + "\t" + Thread.currentThread().getStackTrace()[1].getMethodName());
+    }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+        cause.printStackTrace();
+        ctx.close();
+    }
+}
+ ```
+
+
 
  
 
- 
+### 3. Echo服务-客户端
 
-### 3、Netty实战之Echo服务-客户端程序编写实战
+EchoClient:
 
-**简介：讲解Echo服务客户端程序编写**
+```java
+public class EchoClient {
+    private String host;
+    private int port;
 
- 
+    public EchoClient(String host, int port) {
+        this.host = host;
+        this.port = port;
+    }
 
- 
+    public void start() throws InterruptedException {
+        EventLoopGroup group = new NioEventLoopGroup();
+        try {
+            Bootstrap bootstrap = new Bootstrap();
+            bootstrap.group(group)
+                    .channel(NioSocketChannel.class)
+                    .remoteAddress(new InetSocketAddress(host, port))
+                    .handler(new ChannelInitializer<SocketChannel>() {
+                        @Override
+                        protected void initChannel(SocketChannel socketChannel) throws Exception {
+                            socketChannel.pipeline().addLast(new EchoClientHandler());
+                        }
+                    });
+            //连接到服务端，connect是一部连接，再调用同步等待sync等待连接成功
+            ChannelFuture channelFuture = bootstrap.connect().sync();
+            //阻塞直到客户端通道关闭
+            channelFuture.channel().closeFuture().sync();
+        } finally {
+            //优雅退出，释放NIO线程组
+            group.shutdownGracefully();
+        }
+    }
 
-#### 4、Netty实战之Echo服务演示和整个流程分析
+    public static void main(String[] args) throws InterruptedException {
+        new EchoClient("127.0.0.1", 8080).start();
+    }
+}
+```
 
-**简介：分析整个Echo服务各个组件名称和作用**
+
+
+ EchoClientHandler:
+
+```java
+public class EchoClientHandler extends SimpleChannelInboundHandler {
+    @Override
+    protected void channelRead0(ChannelHandlerContext channelHandlerContext, Object o) throws Exception {
+        ByteBuf byteBuf = (ByteBuf) o;
+        System.out.println("Client received:" + byteBuf.toString(UTF_8));
+    }
+
+    @Override
+    public void channelActive(ChannelHandlerContext ctx) throws Exception {
+        System.out.println(this.getClass().getName() + "\t" + Thread.currentThread().getStackTrace()[1].getMethodName());
+        //向服务端写数据
+        ctx.writeAndFlush(Unpooled.copiedBuffer("测试发送数据到 服务端 ", UTF_8));
+    }
+
+    @Override
+    public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
+        System.out.println(this.getClass().getName() + "\t" + Thread.currentThread().getStackTrace()[1].getMethodName());
+    }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+        cause.printStackTrace();
+        ctx.close();
+    }
+}
+```
+
+
+
+
+
+### 4. Echo流程
 
 - EventLoop和EventLoopGroup
+
+  线程与线程组
+
 - Bootstrapt启动引导类
+
 - Channel 生命周期，状态变化
+
+  channel就是客户端和服务端建立的一个链接
+
 - ChannelHandler和ChannelPipline
 
- 
+  ChannelHandler连接的处理类
+
+  ChannelPipline相当于是装载handler的流水线
 
  
 
  
 
-**
+## 五. Netty链路源码
 
-------
+### 1. EventLoop&EventLoopGroup线程模型
 
- 
+- 高性能RPC框架的3个要素：网络IO模型、数据协议（http/protobuf/Thrift）、线程模型
 
-## 第五章：Netty案例实战分析之核心链路源码讲解
+- EventLoop好比一个线程，1个EventLoop可以服务多个Channel，1个Channel只有一个EventLoop进行服务（一对多）
 
-### 1、深入剖析EventLoop和EventLoopGroup线程模型
+- 可以创建多个 EventLoop 来优化资源利用，也就是EventLoopGroup
 
-**简介：源码讲解EventLoop和EventLoopGroup模块**
-
-- 高性能RPC框架的3个要素：IO模型、数据协议、线程模型
-- EventLoop好比一个线程，1个EventLoop可以服务多个Channel，1个Channel只有一个EventLoop可以创建多个 EventLoop 来优化资源利用，也就是EventLoopGroup
 - EventLoopGroup 负责分配 EventLoop 到新创建的 Channel，里面包含多个EventLoop
-  - EventLoopGroup -> 多个 EventLoop ,EventLoop -> 维护一个 Selector
+  - EventLoopGroup -> 多个 EventLoop
+  - EventLoop -> 维护一个 Selector
   - 学习资料：http://ifeve.com/selectors/
+  
 - 源码分析默认线程池数量
 
- 
+  `NioEventLoopGroup`的类图显示，他继承`ScheduledExecutorService`
 
-### 2、Netty启动引导类Bootstrap模块讲解
+   跟踪默认构造器：
 
-**简介：讲解Netty启动引导类Bootstrap作用和tcp通道参数设置**
+  ```java
+      protected MultithreadEventLoopGroup(int nThreads, Executor executor, Object... args) {
+          super(nThreads == 0 ? DEFAULT_EVENT_LOOP_THREADS : nThreads, executor, args);
+      }
+  
+          DEFAULT_EVENT_LOOP_THREADS = Math.max(1, SystemPropertyUtil.getInt(
+                  "io.netty.eventLoopThreads", NettyRuntime.availableProcessors() * 2));
+  
+       synchronized int availableProcessors() {
+              if (this.availableProcessors == 0) {
+                  final int availableProcessors =
+                          SystemPropertyUtil.getInt(
+                                  "io.netty.availableProcessors",
+                                  Runtime.getRuntime().availableProcessors());
+                  setAvailableProcessors(availableProcessors);
+              }
+              return this.availableProcessors;
+          }
+  ```
 
-- 服务器启动引导类ServerBootstrap
-  - group :设置线程组模型，Reactor线程模型对比EventLoopGroup
-    - 单线程
-    - 多线程
-    - 主从线程
-    - 参考：https://blog.csdn.net/QH_JAVA/article/details/78443646
-  - channel：设置channel通道类型NioServerSocketChannel、OioServerSocketChannel
-  - option: 作用于每个新建立的channel，设置TCP连接中的一些参数,如下
-    - ChannelOption.SO_BACKLOG: 存放已完成三次握手的请求的等待队列的最大长度;
-    - Linux服务器TCP连接底层知识：
-      - syn queue：半连接队列，洪水攻击，tcp_max_syn_backlog
-      - accept queue：全连接队列， net.core.somaxconn
-    - 系统默认的somaxconn参数要足够大 ，如果backlog比somaxconn大，则会优先用后者 https://github.com/netty/netty/blob/4.1/common/src/main/java/io/netty/util/NetUtil.java#L250
-    - ChannelOption.TCP_NODELAY: 为了解决Nagle的算法问题，默认是false, 要求高实时性，有数据时马上发送，就将该选项设置为true关闭Nagle算法；如果要减少发送次数，就设置为false，会累积一定大小后再发送
-    - 知识拓展： [https://baike.baidu.com/item/Nagle%E7%AE%97%E6%B3%95/5645172](https://baike.baidu.com/item/Nagle算法/5645172) https://www.2cto.com/article/201309/241096.html
-  - childOption: 作用于被accept之后的连接
-  - childHandler: 用于对每个通道里面的数据处理
+  可以看到，是取当前环境核数*2；
+
+
+
+### 2. Netty启动引导类Bootstrap
+
+服务器启动引导类ServerBootstrap
+
+![](./images/ServerBootStrap.png)
+
+#### Group
+
+- group：设置线程组模型，Reactor线程模型对比EventLoopGroup
+  - 单线程
+  
+    ```java
+    EventLoopGroup bossGroup = new NioEventLoopGroup(1);
+    ......
+    ServerBootstrap serverBootstrap = new ServerBootstrap();
+    serverBootstrap.group(bossGroup)
+    ```
+  
+    底层：
+  
+    ```java
+        @Override
+        public ServerBootstrap group(EventLoopGroup group) {
+            return group(group, group);
+        }
+    ```
+  
+    可以看出来，这样Netty中的acceptor和后续的所有客户端连接的IO操作都是在一个线程里面进行处理的。
+  
+  
+  
+  
+  - 多线程
+  
+    ```java
+    EventLoopGroup bossGroup = new NioEventLoopGroup(1);
+    EventLoopGroup workGroup = new NioEventLoopGroup();
+    //Runtime.getRuntime().availableProcessors()*2
+    ......
+    ServerBootstrap serverBootstrap = new ServerBootstrap();
+    serverBootstrap.group(bossGroup, workGroup)
+    ```
+  
+    
+  
+  - 主从线程
+  
+    ```java
+    EventLoopGroup bossGroup = new NioEventLoopGroup();
+    EventLoopGroup workGroup = new NioEventLoopGroup();
+    ......
+    ServerBootstrap serverBootstrap = new ServerBootstrap();
+    serverBootstrap.group(bossGroup, workGroup)
+    ```
+  
+    
+  
+  - 参考：https://blog.csdn.net/QH_JAVA/article/details/78443646
+
+#### Channel
+
+- channel：设置channel通道类型NioServerSocketChannel、OioServerSocketChannel
+
+  ```java
+      public B channel(Class<? extends C> channelClass) {
+          if (channelClass == null) {
+              throw new NullPointerException("channelClass");
+          }
+          return channelFactory(new ReflectiveChannelFactory<C>(channelClass));
+      }
+  ```
+
+
+
+
+
+
+####  Option
+
+```java
+ ServerBootstrap serverBootstrap = new ServerBootstrap();
+            serverBootstrap.group(bossGroup, workGroup)
+                    .channel(NioServerSocketChannel.class)
+                
+                    .option(ChannelOption.SO_BACKLOG, 1024)
+                
+                    .option(ChannelOption.TCP_NODELAY, true)
+```
+
+
+
+- option: 作用于每个新建立的channel，设置TCP连接中的一些参数,如下
+  - **ChannelOption.SO_BACKLOG**: 存放已完成三次握手的请求的等待队列（包含syn queue和accept queue）的最大长度。
+  - Linux服务器TCP连接底层知识
+    - 查看：[TCP三次握手四次挥手](https://github.com/zrinGithub/Document/blob/master/%E8%AE%A1%E7%AE%97%E6%9C%BA%E7%BD%91%E7%BB%9C/TCP%E4%B8%89%E6%AC%A1%E6%8F%A1%E6%89%8B%E5%9B%9B%E6%AC%A1%E6%8C%A5%E6%89%8B.md)
+    - syn queue：半连接队列，洪水攻击，tcp_max_syn_backlog设置最大长度
+    - accept queue：全连接队列， net.core.somaxconn设置长度
+  - 系统默认的somaxconn参数要足够大 ，如果 backlog 比 somaxconn 大，则会优先用后者 
+  - https://github.com/netty/netty/blob/4.1/common/src/main/java/io/netty/util/NetUtil.java#L250
+- **ChannelOption.TCP_NODELAY**: [Nagle算法](https://baike.baidu.com/item/Nagle%E7%AE%97%E6%B3%95/5645172)，默认是false
+    - 要求高实时性，有数据时马上发送，就将该选项设置为true
+    - 如果要减少发送次数，就设置为false，会累积一定大小后再发送
+
+
+#### 其他
+
+- childOption: 作用于被accept之后的连接
+
+- childHandler: 用于对每个通道里面的数据处理
+
 - 客户端启动引导类Bootstrap
   - remoteAddress： 服务端地址
   - handler：和服务端通信的处理器
@@ -601,23 +862,17 @@ Echo服务：就是一个应答服务（回显服务器），客户端发送什�
 
  
 
-### 3、Netty核心组件Channel模块讲解
+### 3. Channel模块
 
-**简介:讲解Channel作用，核心模块知识点，生命周期等**
+- **Channel**: 客户端和服务端建立的一个连接通道
 
-- 什么是Channel: 客户端和服务端建立的一个连接通道
+- **ChannelHandler**： 负责Channel的逻辑处理
 
-- 什么是ChannelHandler： 负责Channel的逻辑处理
+- **ChannelPipeline**: 负责管理ChannelHandler的有序容器
 
-- 什么是ChannelPipeline: 负责管理ChannelHandler的有序容器
+- 关系：一个Channel包含一个ChannelPipeline，所有ChannelHandler都会顺序加入到ChannelPipeline中 创建Channel时会自动创建一个ChannelPipeline，每个Channel都有一个管理它的pipeline，这关联是永久性的
 
-- 他们是什么关系:
-
-  - 一个Channel包含一个ChannelPipeline，所有ChannelHandler都会顺序加入到ChannelPipeline中 创建Channel时会自动创建一个ChannelPipeline，每个Channel都有一个管理它的pipeline，这关联是永久性的
-
-- Channel当状态出现变化，就会触发对应的事件
-
-  - 状态：
+- **Channel**当状态出现变化，就会触发对应的事件（下面是事件的顺序）
 
     - channelRegistered: channel注册到一个EventLoop
 
@@ -627,53 +882,79 @@ Echo服务：就是一个应答服务（回显服务器），客户端发送什�
 
     - channelUnregistered: channel已经创建，但是未注册到一个EventLoop里面，也就是没有和Selector绑定
 
-       
+         
 
  
 
-### 4、ChannelHandler和ChannelPipeline模块讲解
+### 4. ChannelHandler和ChannelPipeline
 
-**简介：讲解ChannelHandler和ChannelPipeline核心作用和生命周期**
-
-- 方法: handlerAdded : 当 ChannelHandler 添加到 ChannelPipeline 调用 handlerRemoved : 当 ChannelHandler 从 ChannelPipeline 移除时调用 exceptionCaught : 执行抛出异常时调用
+- `ChannelHandler`接口方法: 
+  - handlerAdded : 当 ChannelHandler 添加到 ChannelPipeline 调用 
+  - handlerRemoved : 当 ChannelHandler 从 ChannelPipeline 移除时调用 
+  - exceptionCaught : 执行抛出异常时调用
 
  
 
 - ChannelHandler下主要是两个子接口
-  - ChannelInboundHandler：(入站) 处理输入数据和Channel状态类型改变， 适配器 ChannelInboundHandlerAdapter（适配器设计模式） 常用的：SimpleChannelInboundHandler
-  - ChannelOutboundHandler：(出站) 处理输出数据，适配器 ChannelOutboundHandlerAdapter
+  - **ChannelInboundHandler**：(入站) 
+  
+    处理输入数据和Channel状态类型改变，
+  
+    适配器`ChannelInboundHandlerAdapter`（适配器设计模式） 
+  
+    常用的：`SimpleChannelInboundHandler`
+  
+  - **ChannelOutboundHandler**：(出站)
+  
+    处理输出数据
+  
+    适配器 `ChannelOutboundHandlerAdapter`
+
+![](./images/handler-inbound-outbound.png)
 
 
 
-- ChannelPipeline： 好比厂里的流水线一样，可以在上面添加多个ChannelHanler，也可看成是一串 ChannelHandler 实例，拦截穿过 Channel 的输入输出 event, ChannelPipeline 实现了拦截器的一种高级形式，使得用户可以对事件的处理以及ChannelHanler之间交互获得完全的控制权
+- `ChannelPipeline`： 好比厂里的流水线一样，可以在上面添加多个ChannelHanler，也可看成是一串 ChannelHandler 实例，拦截穿过 Channel 的输入输出 event, ChannelPipeline 实现了拦截器的一种高级形式，使得用户可以对事件的处理以及ChannelHanler之间交互获得完全的控制权
 
  
 
  
 
-### 5、Netty核心模块指ChannelHandlerContext模块讲解
+### 5. ChannelHandlerContext
 
-**简介：讲解ChannelHandlerContext模块的作用和分析**
+![](./images/ChannelHandlerContext.png)
 
-- ChannelHandlerContext是连接ChannelHandler和ChannelPipeline的桥梁，ChannelHandlerContext部分方法和Channel及ChannelPipeline重合,好比调用write方法
-  - Channel、ChannelPipeline、ChannelHandlerContext 都可以调用此方法，前两者都会在整个管道流里传播，而ChannelHandlerContext就只会在后续的Handler里面传播
-- AbstractChannelHandlerContext类双向链表结构，next/prev分别是后继节点，和前驱节点
+- ChannelHandlerContext是连接ChannelHandler和ChannelPipeline的桥梁
+  
+  - ChannelHandlerContext部分方法和Channel及ChannelPipeline重合
+  - write方法：Channel、ChannelPipeline、ChannelHandlerContext 都可以调用此方法，前两者都会在整个管道流里传播，而ChannelHandlerContext就只会在后续的Handler里面传播
+  
+  ```java
+  //1.通道来写
+  Channel channel = ctx.channel();
+  channel.writeAndFlush(Unpooled.copiedBuffer("测试发送数据到 服务端 ", UTF_8));
+  
+  //2.管道来写
+  ChannelPipeline pipeline = ctx.pipeline();
+  pipeline.writeAndFlush(Unpooled.copiedBuffer("测试发送数据到 服务端 ", UTF_8));
+  
+  //3.上下文里面写
+  ctx.writeAndFlush(Unpooled.copiedBuffer("测试发送数据到 服务端 ", UTF_8));
+  ```
+  
+  
+  
+- AbstractChannelHandlerContext类双向链表结构，next/prev分别是后继/前驱节点
+
 - DefaultChannelHandlerContext 是实现类，但是大部分都是父类那边完成，这个只是简单的实现一些方法 主要就是判断Handler的类型
-- ChannelInboundHandler之间的传递，主要通过调用ctx里面的FireXXX()方法来实现下个handler的调用
+
+- ChannelInboundHandler之间的传递，主要通过调用ctx里面的fireXXX()方法来实现下个handler的调用
 
  
 
  
 
-### 6、Netty案例实战常见问题之入站出站Handler执行顺序
-
-**简介: 讲解多个入站出站ChannelHandler的执行顺序**
-
-1、一般的项目中，inboundHandler和outboundHandler有多个，在Pipeline中的执行顺序？ InboundHandler顺序执行，OutboundHandler逆序执行 问题：ch.pipeline().addLast(new InboundHandler1()); ch.pipeline().addLast(new OutboundHandler1()); ch.pipeline().addLast(new OutboundHandler2()); ch.pipeline().addLast(new InboundHandler2()); 或者： ch.pipeline().addLast(new OutboundHandler1()); ch.pipeline().addLast(new OutboundHandler2()); ch.pipeline().addLast(new InboundHandler1()); ch.pipeline().addLast(new InboundHandler2()); 执行顺序是： InboundHandler1 channelRead InboundHandler2 channelRead OutboundHandler2 write OutboundHandler1 write
-
- 
-
-结论：
+### 6. 入站出站Handler执行顺序
 
 - InboundHandler顺序执行，OutboundHandler逆序执行
 - InboundHandler之间传递数据，通过ctx.fireChannelRead(msg)
@@ -683,36 +964,28 @@ Echo服务：就是一个应答服务（回显服务器），客户端发送什�
 
  
 
-### 7、Netty异步操作模块ChannelFuture讲解
+### 7. ChannelFuture
 
-**简介：讲解ChannelFuture异步操作模块及使用注意事项**
+- Netty中的所有I/O操作都是异步的：这意味着任何I/O调用都会立即返回。
 
-- Netty中的所有I/O操作都是异步的,这意味着任何I/O调用都会立即返回，而ChannelFuture会提供有关的信息I/O操作的结果或状态。
+- 而ChannelFuture会提供有关的信息I/O操作的结果或状态。
+
 - ChannelFuture状态
-  - 未完成：当I/O操作开始时，将创建一个新的对象，新的最初是未完成的 - 它既没有成功，也没有成功，也没有被取消，因为I/O操作尚未完成。
+  - 未完成：当I/O操作开始时，将创建一个新的对象，新的最初是未完成的 - 它既没有成功，也没有被取消，因为I/O操作尚未完成。
+  
   - 已完成：当I/O操作完成，不管是成功、失败还是取消，Future都是标记为已完成的, 失败的时候也有具体的信息，例如原因失败，但请注意，即使失败和取消属于完成状态
-  - 注意：不要在IO线程内调用future对象的sync或者await方法。不能在channelHandler中调用sync或者await方法
+  
+- 注意：不要在IO线程内调用future对象的sync或者await方法。不能在channelHandler中调用sync或者await方法。
+  
 - ChannelPromise：继承于ChannelFuture，进一步拓展用于设置IO操作的结果
 
  
 
  
 
- 
+## 六. Netty网络数据传输编解码
 
- 
-
-**
-
-------
-
- 
-
-## 第六章：高并发架构之Netty网络数据传输编解码精讲
-
-### 1、Netty网络传输知识之什么是编码、解码
-
-**简介：讲解Netty编写的网络数据传输中的编码和解码**
+### 1. Netty编码、解码
 
 - 前面说的：高性能RPC框架的3个要素：IO模型、数据协议、线程模型
 
@@ -722,12 +995,10 @@ Echo服务：就是一个应答服务（回显服务器），客户端发送什�
 
   - java自带序列化的缺点
 
-    ```
-    1）无法跨语言
-    2) 序列化后的码流太大，也就是数据包太大
-    3) 序列化和反序列化性能比较差
-    ```
-
+    - 无法跨语言 
+    - 序列化后的码流太大，也就是数据包太大
+    - 序列化和反序列化性能比较差
+    
      
 
 - 业界里面也有其他编码框架： google的 protobuf（PB)、Facebook的Trift、Jboss的Marshalling、Kyro等
@@ -746,124 +1017,157 @@ Echo服务：就是一个应答服务（回显服务器），客户端发送什�
 
      
 
-### 2、数据协议处理之Netty解码器Decoder讲解
+### 2. Netty解码器Decoder
 
-**简介:讲解Netty的解码器Decoder和使用场景**
+- `Decoder`对应的就是`ChannelInboundHandler`，主要就是字节数组转换为消息对象
 
-- Decoder对应的就是ChannelInboundHandler，主要就是字节数组转换为消息对象
+- 主要是两个方法 
 
-- 主要是两个方法 decode decodeLast
+  - decode 
+  - decodeLast：用于最后几个字节的处理
 
 - 抽象解码器
 
-  - ByteToMessageDecoder用于将字节转为消息，需要检查缓冲区是否有足够的字节
-  - ReplayingDecoder继承ByteToMessageDecoder，不需要检查缓冲区是否有足够的字节，但是ReplayingDecoder速度略满于ByteToMessageDecoder，不是所有的ByteBuf都支持
-  - 选择：项目复杂性高则使用ReplayingDecoder，否则使用 ByteToMessageDecoder
-  - MessageToMessageDecoder用于从一种消息解码为另外一种消息（例如POJO到POJO）
+  - `ByteToMessageDecoder`用于将字节转为消息，需要检查缓冲区是否有足够的字节
+
+    ```java
+    public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
+    {......}
+    ```
+
+    
+
+  - `ReplayingDecode`r继承`ByteToMessageDecoder`，不需要检查缓冲区是否有足够的字节，但是`ReplayingDecoder`速度略慢于`ByteToMessageDecoder`，不是所有的ByteBuf都支持
+
+  - 选择：项目复杂性高则使用`ReplayingDecoder`，否则使用 `ByteToMessageDecoder`
+
+    
+
+  - `MessageToMessageDecoder`用于从一种消息解码为另外一种消息（例如POJO到POJO）
 
    
 
 - 解码器具体的实现，用的比较多的是(更多是为了解决TCP底层的粘包和拆包问题)
 
-  - DelimiterBasedFrameDecoder： 指定消息分隔符的解码器
-  - LineBasedFrameDecoder: 以换行符为结束标志的解码器
-  - FixedLengthFrameDecoder：固定长度解码器
-  - LengthFieldBasedFrameDecoder：message = header+body, 基于长度解码的通用解码器
-  - StringDecoder：文本解码器，将接收到的对象转化为字符串，一般会与上面的进行配合，然后在后面添加业务handle
+  - `DelimiterBasedFrameDecoder`： 指定消息分隔符的解码器
+  - `LineBasedFrameDecoder`: 以换行符为结束标志的解码器
+  - `FixedLengthFrameDecoder`：固定长度解码器
+  - `LengthFieldBasedFrameDecoder`：message = header+body，基于长度解码的通用解码器
+  - `StringDecoder`：文本解码器，将接收到的对象转化为字符串，一般会与上面的进行配合，然后在后面添加业务handle
 
  
 
-### 3、数据协议处理之Netty编码器Encoder讲解
+### 3. Netty编码器Encoder
 
-**简介：讲解Netty编码器Encoder**
+- `Encoder`对应的就是`ChannelOutboundHandler`，消息对象转换为字节数组
 
-- Encoder对应的就是ChannelOutboundHandler，消息对象转换为字节数组
 - Netty本身未提供和解码一样的编码器，是因为场景不同，两者非对等的
-- MessageToByteEncoder消息转为字节数组,调用write方法，会先判断当前编码器是否支持需要发送的消息类型，如果不支持，则透传；
-- MessageToMessageEncoder用于从一种消息编码为另外一种消息（例如POJO到POJO）
+
+- `MessageToByteEncoder`消息转为字节数组，调用write方法，会先判断当前编码器是否支持需要发送的消息类型，如果不支持，则透传；
+
+  ```java
+      @Override
+      public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
+          ByteBuf buf = null;
+          try {
+              if (acceptOutboundMessage(msg)) {
+                  @SuppressWarnings("unchecked")
+                  I cast = (I) msg;
+                  buf = allocateBuffer(ctx, cast, preferDirect);
+                  try {
+                      //encode就是自定义的编码方法
+                      encode(ctx, cast, buf);
+                  } finally {
+                      ReferenceCountUtil.release(cast);
+                  }
+  
+                  if (buf.isReadable()) {
+                      ctx.write(buf, promise);
+                  } else {
+                      buf.release();
+                      ctx.write(Unpooled.EMPTY_BUFFER, promise);
+                  }
+                  buf = null;
+              } else {
+                  ctx.write(msg, promise);
+              }
+          } catch (EncoderException e) {
+              throw e;
+          } catch (Throwable e) {
+              throw new EncoderException(e);
+          } finally {
+              if (buf != null) {
+                  buf.release();
+              }
+          }
+      }
+  ```
+
+  
+
+- `MessageToMessageEncoder`用于从一种消息编码为另外一种消息（例如POJO到POJO）
 
  
 
-### 4、数据协议处理之Netty编解码器类Codec讲解
+### 4. Netty编解码器类Codec
+Codec 组合解码器和编码器，以此提供对于字节和消息都相同的操作
 
-**简介：讲解组合编解码器类Codec**
+优点：成对出现，编解码都是在一个类里面完成
 
-```
-    组合解码器和编码器，以此提供对于字节和消息都相同的操作
-       
-        优点：成对出现，编解码都是在一个类里面完成    
-        缺点：耦合在一起，拓展性不佳
+缺点：耦合在一起，拓展性不佳
 
-        Codec:组合编解码
-            1）ByteToMessageCodec
-    
-            2）MessageToMessageCodec
-    
-        decoder:解码
-             1）ByteToMessageDecoder
-    
-             2）MessageToMessageDecoder
-        
-        encoder:编码
-             1）ByteToMessageEncoder
-    
-            2）MessageToMessageEncoder
-```
+组合编解码
 
- 
+1）`ByteToMessageCodec`
+2）`MessageToMessageCodec`
+
+
+
+decoder：解码
+
+- `ByteToMessageDecoder`
+- `MessageToMessageDecoder`
+
+
+
+encoder：编码
+
+- `ByteToMessageEncoder`
+- `MessageToMessageEncoder`
 
  
 
- 
+## 七. 网络传输TCP粘包拆包
 
- 
+### 1. TCP粘包拆包
 
-**
+TCP拆包：一个完整的包可能会被TCP拆分为多个包进行发送
 
-------
+TCP粘包：把多个小的包封装成一个大的数据包发送，client发送的若干数据包。Server接收时粘成一包。
+发送方和接收方都可能出现这个原因。
 
- 
 
-## 第七章、Netty核心知识之网络传输TCP粘包拆包
 
-### 1、网络编程核心知识之TCP粘包拆包讲解
+发送方的原因：TCP默认会使用Nagle算法。
 
-**简介：讲解什么是TCP粘包拆包讲解**
+接收方的原因：TCP接收到数据放置缓存中，应用程序从缓存中读取。 
 
-```
-1）TCP拆包: 一个完整的包可能会被TCP拆分为多个包进行发送
-2）TCP粘包: 把多个小的包封装成一个大的数据包发送, client发送的若干数据包 Server接收时粘成一包
-    
-发送方和接收方都可能出现这个原因
-        
-发送方的原因：TCP默认会使用Nagle算法
-        
-接收方的原因: TCP接收到数据放置缓存中，应用程序从缓存中读取 
-       
-UDP: 是没有粘包和拆包的问题，有边界协议
-```
+UDP：是没有粘包和拆包的问题，有边界协议。
 
- 
 
- 
 
-### 2、TCP半包读写常见解决方案
 
-**简介：讲解TCP半包读写常见的解决办法**
+### 2. TCP半包读写常见解决方案
 
-```
 发送方：可以关闭Nagle算法
       接受方: TCP是无界的数据流，并没有处理粘包现象的机制, 且协议本身无法避免粘包，半包读写的发生需要在应用层进行处理
      应用层解决半包读写的办法
      1）设置定长消息 (10字符)
         xdclass000xdclass000xdclass000xdclass000
-                        
-     2）设置消息的边界 ($$ 切割)
+                           2）设置消息的边界 ($$ 切割)
         sdfafwefqwefwe$$dsafadfadsfwqehidwuehfiw$$879329832r89qweew$$
-    
-     3）使用带消息头的协议，消息头存储消息开始标识及消息的长度信息
+3）使用带消息头的协议，消息头存储消息开始标识及消息的长度信息
         Header+Body
-```
 
  
 
