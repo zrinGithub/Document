@@ -6,6 +6,12 @@
 
 项目地址：https://github.com/zrinGithub/activiti-demo.git
 
+博客、资源：
+
+[Activiti6.0教程](https://tomoya92.github.io/2019/04/24/activiti-env/)
+
+
+
 ## 一. 概念
 
 ### 1. 工作流框架
@@ -95,6 +101,24 @@ Activiti里面有几个Service，他们都是从流程引擎`ProcessEngine`获�
 添加 `-Dfile.encoding=UTF-8`
 
 改完需要重启
+
+
+
+**这个插件后面一堆问题，现在使用Eclipse画了图再复制过来。**
+
+Eclipse安装：
+
+菜单Help
+
+->Install new Software...
+
+->Add...
+
+->name 随便写 location: http://www.activiti.org/designer/update
+
+
+
+**不过即使你使用的是拷贝的bpmn文件，在idea也需要安装插件，否则会找不到文件，改成xml会找不到对应任务，所以最好还是在Eclipse下开发**
 
 
 
@@ -376,7 +400,7 @@ public class ActivitiConfig {
 
    ![](./images/请假流程-任务名称受理人.png)
 
-3. 指定线条逻辑
+3. 指定线条逻辑，这里为了简单不设定Condition
 
    ![](./images/请假流程-线的逻辑.png)
 
@@ -398,7 +422,7 @@ public class ActivitiConfig {
                 //流程名字
                 .name("测试1")
                 //流程资源文件
-                .addClasspathResource("task/TestTask1.bpmn")
+                .addClasspathResource("task/TestProcess1.bpmn")
                 //部署
                 .deploy();
         log.info("Deploy----- id:" + deploy.getId());
@@ -415,4 +439,177 @@ public class ActivitiConfig {
 ```
 
 
+
+### 6. 查询任务
+
+查询任务的时候，我们使用受理人来查询，我们的第一个Task的受理人（Assignee）是user1：
+
+```java
+        //查询任务
+        TaskService taskService = processEngine.getTaskService();
+        List<Task> tasks = taskService.createTaskQuery().taskAssignee("user1")
+                //可以设置分页
+//                .listPage(1, 10)
+                //排序
+//                .orderByTaskCreateTime().desc()
+                //确定只有一个结果的时候，可以直接取单个返回
+//                .singleResult()
+                .list();
+```
+
+这里`taskService`查询的方式有很多种：
+
+```java
+        taskService.createTaskQuery().taskId("").singleResult();
+        taskService.createTaskQuery().taskName("").singleResult();
+```
+
+
+
+
+
+### 7.处理任务
+
+根据受理人查询到对应的任务id之后，可以指定id完成任务
+
+```java
+       for (Task task : tasks) {
+            String taskId = task.getId();
+            log.info("Now complete Task id:" + taskId);
+            //处理任务
+            taskService.complete(taskId);
+        }
+```
+
+
+
+处理任务的时候可以进行批注：
+
+```java
+        for (Task task : tasks) {
+            //任务id
+            String taskId = task.getId();
+            //流程实例id
+            String instanceId = task.getProcessInstanceId();
+            //批注信息
+            String comment = "同意";
+            Authentication.setAuthenticatedUserId("user1");
+            //添加批注
+            taskService.addComment(taskId, instanceId, comment);
+
+            log.info("Now complete Task id:" + taskId);
+            //处理任务
+            taskService.complete(taskId);
+        }
+```
+
+
+
+### 8. 查询批注和BusinessKey
+
+BusinessKey用于关联activiti本身的业务逻辑：
+
+```java
+        //查看批注与businessKey 
+        List<Task> user2Tasks = taskService.createTaskQuery().taskAssignee("user2").list();
+        for (Task task : user2Tasks) {
+            List<Comment> comments = taskService.getProcessInstanceComments(task.getProcessInstanceId());
+            log.info("task id: {} ", task.getId());
+            for (Comment comment : comments) {
+                log.info("comment user:{}", comment.getUserId());
+                log.info("comment message:{}", comment.getFullMessage());
+                log.info("comment time:{}", comment.getTime());
+            }
+            //拿到businessKey
+            ProcessInstance instance1 = runtimeService.createProcessInstanceQuery()
+                    .processInstanceId(task.getProcessInstanceId())
+                    .singleResult();
+            log.info("business key:{}", instance1.getBusinessKey());
+        }
+```
+
+
+
+## 三. 进阶配置
+
+之前我们在任务中设置的受理人都是写死的常量user1、user2、user3
+
+实际情况中，我们可以使用监听或者动态变量的方式来配置。
+
+### 1. 监听方式配置任务
+
+首先写监听器类，需要实现`TaskListener`接口的`notify`方法：
+
+```java
+public class Task1Listener implements TaskListener {
+    @Override
+    public void notify(DelegateTask delegateTask) {
+        delegateTask.setAssignee("user1");
+    }
+}
+public class Task2Listener implements TaskListener {
+    @Override
+    public void notify(DelegateTask delegateTask) {
+        delegateTask.setAssignee("user2");
+    }
+}
+public class Task3Listener implements TaskListener {
+    @Override
+    public void notify(DelegateTask delegateTask) {
+        delegateTask.setAssignee("user3");
+    }
+}
+```
+
+
+
+之后我们绘制`TestProcess2.bpmn`流程图用于测试：
+
+![](./images/请假流程-任务监听器.png)
+
+这个idea上面点击有问题就不测试了。
+
+
+
+### 2. 变量配置任务
+
+同样的，activiti支持使用表达式${}来传入变量，这里我们把所有的代理人修改为`${username}`
+
+
+
+启动流程：
+
+```java
+  // 创建一个Map存放变量
+  Map<String, Object> variables = new HashMap<>();
+  // 设置这个流程的下一个代理人是 user1
+  variables.put("username", "user1");
+  // 这次调用的方法是三个参数的, 最后一个是放变量的
+  ProcessInstance instance = runtimeService.startProcessInstanceByKey("AskLeave", "1", variables);
+  System.out.println("Id: " + instance.getId());
+```
+
+
+
+指定下一个受理人：
+
+```java
+  // 通过查询可以拿到user2的任务id是7502
+  String taskId = "2505";
+  // 选通过taskId查询任务
+  Task task = taskService.createTaskQuery().taskId(taskId).singleResult();
+  // 从任务里拿到流程实例id
+  String processInstanceId = task.getProcessInstanceId();
+  // 批注信息
+  String message = "同意";
+  Authentication.setAuthenticatedUserId("user1"); // 当前处理任务的用户的userId, 也可以放用户名
+  // 给任务添加批注
+  taskService.addComment(taskId, processInstanceId, message);
+  // 创建一个Map存放变量
+  Map<String, Object> variables = new HashMap<>();
+  // 设置这个流程的下一个代理人是 user2
+  variables.put("username", "user2");
+  // 处理任务
+  taskService.complete(taskId, variables);
+```
 
