@@ -720,11 +720,134 @@ public class RabbitMqConfig {
 }
 ```
 
-
+`topExchangeBinging()` and `fanoutExchangeBinging` already bind queue to exchange.
 
  
 
 #### Annotation
 
+```java
+@Component
+@Slf4j
+public class RabbitMqAnnotationConfig {
+    @RabbitListener(bindings = {
+            @QueueBinding(
+                    value = @Queue(value = "topic_queue", durable = "true"),
+                    exchange = @Exchange(value = "topic_exchange", type = ExchangeTypes.TOPIC),
+                    key = "keyA.*")})
+    public void receiveMqExchangeInfo(String msg) {
+        log.info("接受到topic_queue的消息" + msg);
+    }
+
+}
+```
+
+`@Queue` set the queue name and durable, `@Exchange` bind exchange with queue and set exchange type to topic.
 
 
+
+### Send message
+
+As we already set the configuration in `application.yml`, now we can use `RabbitTemplate` to send messages.
+
+```java
+    @Resource
+    private RabbitTemplate rabbitTemplate;
+
+    @Override
+    public String test(String msg) {
+        Object receive = rabbitTemplate.convertSendAndReceive("topic_exchange", "keyA.A", msg);
+        return receive == null ? "hello word!" : receive.toString();
+    }
+```
+
+
+
+### SpringBoot Annotation
+
+There are some annotation you can use in springboot.
+
+
+
+#### @RabbitListener
+
+```java
+@Target({ ElementType.TYPE, ElementType.METHOD, ElementType.ANNOTATION_TYPE })
+public @interface RabbitListener {
+    .....
+}
+```
+
+
+
+##### param
+
+we can use `Message` as param, the `Message` id convert by `MessageConverter`
+
+```java
+@RabbitListener(queues = "")
+public void processMessage1(Message bytes) {
+    System.out.println(new String(bytes));
+}
+```
+
+
+
+we can use following annotations:
+
+```java
+@RabbitListener(queues = "")
+public void processMessage1(
+    @Payload String body, 
+    @Headers Map<String,Object> headers
+    @Header String token) {
+    ...
+}
+```
+
+
+
+##### bind
+
+```java
+    @RabbitListener(bindings = {
+            @QueueBinding(
+                    value = @Queue(value = "topic_queue", durable = "true"),
+                    exchange = @Exchange(value = "topic_exchange", durable = "true", type = ExchangeTypes.TOPIC),
+                    key = "keyA.*")})
+    public void receiveMqExchangeInfo(String msg) {
+        log.info("接受到topic_queue的消息" + msg);
+    }
+```
+
+
+
+### @RabbitHandler
+
+Sometimes message can be different type:
+
+```java
+@Component
+@RabbitListener(queues = "")
+public class Receiver {
+
+    @RabbitHandler
+    public void processMessage1(String message) {
+        System.out.println(message);
+    }
+
+    @RabbitHandler
+    public void processMessage2(byte[] message) {
+        System.out.println(new String(message));
+    }
+    
+}
+```
+
+
+
+## Examples：Order
+
+[rabbitmq-demo](https://github.com/zrinGithub/rabbitmq-demo.git)
+
+see this example in branch `order-simulation`
