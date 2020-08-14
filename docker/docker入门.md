@@ -4,6 +4,30 @@
 
 
 
+## 印象
+
+Docker 		搬运工
+
+Container	集装箱
+
+
+
+与虚拟机的区别：
+
+虚拟机是构建在物理CPU和内存上面，属于硬件级别。
+
+Docker构建在操作系统层面，利用操作系统的容器化技术。
+
+
+
+Docker Engine是c/s架构的应用程序，我们使用docker client交互，底层使用Docker Damon，Registry存储镜像，默认是从Docker Hub(hub.docker.com)公共镜像进行拉取。
+
+Image 就是自定义镜像，可以通过镜像创建Container.
+
+
+
+相关博客：https://www.qikqiak.com/k8s-book/ 
+
 ## 一.  环境安装：
 
 - 环境说明：
@@ -49,7 +73,7 @@
 
 ## 二. Docker基本操作
 
-### 1. 镜像的搜索下载、查看删除
+### 1. 镜像的搜索下载、查看、删除、重命名
 
 ```shell
 # 查看本地镜像
@@ -104,7 +128,7 @@ systemctl daemon-reload && systemctl restart docker
 
 
 
-### 4. docker容器构建
+### 4. docker容器构建（centos和nginx示例）
 
 ```shell
 # 构建容器：
@@ -114,8 +138,18 @@ docker run -itd --name=mycentos centos:7
 -t:为容器重新分配一个伪输入终端
 --name:为容器指定名称
 
-# 查看本地所有容器：
+docker run -it --rm ubuntu:16.04 /bin/bash
+--rm 退出终端就自动删除
+需要使用exit退出
+
+docker run --name nginx81 -d -p 80:80 -v /usr/docker/nginx/html:/usr/share/nginx/html nginx
+-p前面是本机端口，后面是容器端口
+-v前面是本地文件，后面是nginx容器默认主页
+顺便说一句默认nginx配置文件在容器里的/etc/nginx里面
+
+# 查看本地所有容器（两种方式都可以）：
 docker ps -a
+docker container ls --all
 
 # 查看本地正在运行的容器
 docker ps
@@ -163,6 +197,46 @@ docker run -itd -v 宿主机地址：容器路径 镜像
 
 
 
+### 6. 打印容器操作系统中的说明
+
+```shell
+[root@localhost ~]# docker run -it --name=mycentos centos:7 /bin/bash
+[root@43544a8a4a65 /]# cat /etc/os-release 
+NAME="CentOS Linux"
+VERSION="7 (Core)"
+ID="centos"
+ID_LIKE="rhel fedora"
+VERSION_ID="7"
+PRETTY_NAME="CentOS Linux 7 (Core)"
+ANSI_COLOR="0;31"
+CPE_NAME="cpe:/o:centos:centos:7"
+HOME_URL="https://www.centos.org/"
+BUG_REPORT_URL="https://bugs.centos.org/"
+
+CENTOS_MANTISBT_PROJECT="CentOS-7"
+CENTOS_MANTISBT_PROJECT_VERSION="7"
+REDHAT_SUPPORT_PRODUCT="centos"
+REDHAT_SUPPORT_PRODUCT_VERSION="7"
+```
+
+
+
+### 7.查看空间和容器启动日志
+
+```shell
+[root@localhost ~]# docker system df
+TYPE                TOTAL               ACTIVE              SIZE                RECLAIMABLE
+Images              11                  2                   2.159GB             2.159GB (99%)
+Containers          2                   0                   27B                 27B (100%)
+Local Volumes       0                   0                   0B                  0B
+Build Cache         0                   0                   0B                  0B
+
+[root@localhost ~]# docker logs CONTAINER_ID/CONTAINER_NAME
+可以加-f跟踪，-t时间
+```
+
+
+
 ## 三. 自定义镜像
 
 ### 1. 基于docker commit制作镜像
@@ -183,6 +257,9 @@ yum -y install net-tools
 docker restart CONTAINER_ID/CONTAINER_NAME 
 docker exec -it CONTAINER_ID/CONTAINER_NAME /bin/bash
 
+# 查看容器修改
+docker diff CONTAINER_ID/CONTAINER_NAME
+
 # 删除容器（这里-f是强制删除，否则需要先暂停容器）并再次启动容器
 # 此时新建的文件和yum安装的工具都不见了
 docker rm -f CONTAINER_ID/CONTAINER_NAME && docker run -it centos:7 /bin/bash
@@ -195,6 +272,11 @@ docker commit -a "author" -m "comment" CONTAINER_ID/CONTAINER_NAME
 
 如：
 docker commit -a "zr" -m "centos test" 96cef324046e mycentos:v1
+
+# 查看历史记录（有点像git的提交记录，因为你修改了镜像，所以之前提交的和原镜像差不多）
+docker history NEW_IMAGE_ID/NEW_IMAGE_NAME:TAG
+如：
+docker history mycentos:v1
 
 # 查看详细信息
 docker inspect CONTAINER_ID/CONTAINER_NAME
