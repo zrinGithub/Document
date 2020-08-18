@@ -8,6 +8,31 @@
 
 
 
+## 网络配置
+
+centos下进行网络配置：
+
+```shell
+编辑
+vim /etc/sysconfig/network-scripts/ifcfg-ens33 
+
+内容
+......
+BOOTPROTO=static
+NAME=ens33
+DEVICE=ens33
+ONBOOT=yes
+IPADDR=192.168.190.100
+NETMASK=255.255.255.0
+GATEWAY=192.168.190.2
+DNS1=119.29.29.29
+
+重启
+service network restart
+```
+
+
+
 ## java
 
 - yum安装
