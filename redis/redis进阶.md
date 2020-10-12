@@ -335,11 +335,47 @@ try {
 
 
 
+## 二. 持久化
+
+方案：
+
+1. RDB快照
+2. AOF命令日志
+3. 同时使用以上两种，这样重启服务以后，AOF用于
 
 
-## 二. redis集群安装
+
+## 三. redis命令
+
+### SAVE&BGSAVE
+
+SAVE会阻塞Redis进程进行RDB创建
+
+`save <seconds> <changes>`表示在seconds秒内，至少有changes次变化，就会自动触发`gbsave`命令
+
+
+
+BGSAVE在后台异步保存当前数据库数据到磁盘
+
+BGSAVE执行之后马上返回OK，然后fork出一个新子进程，原来的父进程继续处理客户端请求，而子进程负责把数据保存到磁盘。
+
+异步的结果可以通过LASTSAVE查看
+
+
+
+### BGREWRITEAOF
+
+AOF文件重写，重写会创建一个当前 AOF 文件的体积优化版本。
+
+
+
+
+
+## 三. redis集群
 
 redis安装参考redis入门文档。
+
+相关博客：https://zhuanlan.zhihu.com/p/72056688
 
 
 
@@ -365,7 +401,7 @@ port  7000                     //端口7000,7002,7003,7004,7005
 cluster-enabled  yes            //开启集群  把注释#去掉
 cluster-config-file  nodes.conf   //集群的配置,首次启动自动生成 
 cluster-node-timeout  5000     //请求超时  设置5秒够了
-appendonly  yes               //aof日志开启，它会操作日志
+appendonly  yes               //aof日志开启，它会操作日志，如果使用rdb就是用dbfilename "xx.rdb" 与  dir ./指定工作目录
 bind 127.0.0.1 172.16.244.133(Redis安装的这台机的内网IP,命令：ip addr) //添加一个内网IP，这部不操作的话会导致内网其他节点无妨访问你的集群
 
 #配置到每一个节点
@@ -374,4 +410,63 @@ cp /usr/local/redis_cluster/7000/redis.conf /usr/local/redis_cluster/7001
 
 
 
-   
+  `cluster-enable`与`cluster-config-file`
+
+与集群相关。
+
+
+
+我们可以调用`redis-cli info Server`看到集群当前的模式（`redis_mode:standalone`或者`redis_mode:cluster`）
+
+`cluster-config-file`指定集群配置文件的位置，每个节点运行都会维护一个集群配置文件（redis自己维护），每次重启会重新读取文件获得集群的信息。
+
+
+
+### 3. 启动集群
+
+**节点握手**：
+
+`redis-server redis.conf`启动集群后，
+
+可以通过`redis-cli -p 7000 cluster nodes`查看节点的情况，第一项就是id，这个id会保存到集群的配置文件，也就是即使重启也不会变。
+
+
+
+节点启动以后需要进行节点握手：
+
+进入redis客户端以后，调用命令`cluster meet ip port`，之后再调用`redis-cli -p 7000 cluster nodes`就可以看到加入节点的信息。
+
+
+
+**分配槽**：
+
+redis集群使用槽来完成数据分区，当所有16384个槽都分配了节点以后，集群才处于上线状态。
+
+使用`redis-cli -p 7000 cluster info`可以看到当前集群的状态，分配槽以前`cluster_state:fail`
+
+
+
+使用`cluster addslots`分配槽：
+
+```sh
+redis-cli -p 7000 cluster addslots {0..5461}
+redis-cli -p 7001 cluster addslots {5462..10922}
+redis-cli -p 7002 cluster addslots {10923..16383}
+```
+
+
+
+**指定主从关系**：
+
+分配节点作为指定master的slave节点。最后的参数是master id，使用`cluster nodes`获取
+
+```sh
+redis-cli -p 8000 cluster replicate be816eba968bc16c884b963d768c945e86ac51ae
+redis-cli -p 8001 cluster replicate 788b361563acb175ce8232569347812a12f1fdb4
+redis-cli -p 8002 cluster replicate a26f1624a3da3e5197dde267de683d61bb2dcbf1
+```
+
+
+
+### 4. 集群的基本原理
+
