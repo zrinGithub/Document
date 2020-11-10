@@ -5,6 +5,12 @@ server:
 spring:
   application:
     name: gateway
+  zipkin:
+    base-url: http://127.0.0.1:9411/ #zipkin地址
+    discovery-client-enabled: false  #不用开启服务发现
+  sleuth:
+    sampler:
+      probability: 1.0 #采样百分比，这只为1表示记录全部sleuth信息，仅为测试用（过于频繁会影响性能）
   cloud:
     nacos:
       discovery:
