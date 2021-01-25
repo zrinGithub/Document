@@ -519,9 +519,15 @@ while(keyIterator.hasNext()) {
 ```java
 //创建Selector
 Selector selector = Selector.open();
-//注册Channel到Selector
+//可选通道配置为非阻塞模式
+ServerSocketChannel channel = ServerSocketChannel.open();
 channel.configureBlocking(false);
-SelectionKey key = channel.register(selector, SelectionKey.OP_READ);
+//绑定端口
+Socket socket = channel.socket();
+socket.bind(new InetSocketAddress(port));
+
+//注册时间
+SelectionKey key = channel.register(selector, SelectionKey.OP_ACCEPT);
 
 while(true) {
 	//立刻获取当前就绪的Channel

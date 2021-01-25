@@ -2569,6 +2569,10 @@ public class NonReentrantLock implements Lock, Serializable {
 
 
 
+队列具有FIFO的特点，所以维护两个putIndex、takeIndex都是从1开始，两个条件队列notEmpty、notFull主要是为了阻塞队列而准备的。
+
+
+
 下面是一些重要的变量：
 
 ```java
@@ -4459,4 +4463,76 @@ public class ToiletRace {
             }
         }
 ```
+
+
+
+
+
+## 三. 应用
+
+### logback 异步打印日志 - AsyncAppender
+
+![](./image/AsyncAppender.png)
+
+这是一个多生产者-单消费者的。
+
+
+
+先从`AsyncAppenderBase`来看：
+
+`blockingQueue`是一个`ArrayBlockingQueue`，容量就是`queueSize`
+
+`woker`作为消费线程
+
+`aai`作为装饰器，里面存放了同步日志的`appender`
+
+`discardingThreshold`作为阈值，当队列空闲元素小于这个值，需要考虑丢弃
+
+`start()`方法启动了消费线程
+
+
+
+首先我们看`AsyncAppenderBase`的`append()`方法：
+
+```java
+    protected void append(E eventObject) {
+        if (!this.isQueueBelowDiscardingThreshold() || 
+            !this.isDiscardable(eventObject)) {
+            this.preprocess(eventObject);
+            this.put(eventObject);
+        }
+    }
+
+    private boolean isQueueBelowDiscardingThreshold() {
+        return this.blockingQueue.remainingCapacity() < this.discardingThreshold;
+    }
+```
+
+这里`isDiscardable`被`AsyncAppender`重写，日志级别小于等于20000就可以被丢弃：
+
+```java
+    protected boolean isDiscardable(ILoggingEvent event) {
+        Level level = event.getLevel();
+        return level.toInt() <= 20000;
+    }
+```
+
+
+
+如果正常情况（队列还有位置大于`discardingThreshold`或者优先级较高），会继续调用`put`
+
+方法：
+
+```java
+    private void put(E eventObject) {
+        if (this.neverBlock) {
+            this.blockingQueue.offer(eventObject);
+        } else {
+            this.putUninterruptibly(eventObject);
+        }
+
+    }
+```
+
+也就是如果`neverBlock=true`设置不阻塞，就直接调用`offer`方法入队，否则使用`put`阻塞
 

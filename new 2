@@ -1,0 +1,6 @@
+执行execute(command):
+- workQueue.offer(command)
+- addWorker
+	- compareAndIncrementWorkerCount
+	- mainLock.lock() -----ReentrantLock
+		- 

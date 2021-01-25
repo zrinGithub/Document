@@ -212,6 +212,8 @@ DirectMemory容量可通过**-XX:MaxDirectMemorySize**指定
 
 算法分为“标记”和“清除”两个阶段：首先标记出所有需要回收的对象，在标记完成后统一回收所有被标记的对象。
 
+标记和清除两个过程的效率都不高，而且清除之后会产生内存碎片，也就无法继续分配较大对象
+
 
 
 ### 复制算法（新生代）
@@ -407,6 +409,75 @@ CMS（Concurrent Mark Sweep）收集器是一种以获取最短回收停顿时�
 
 
 
+### GC日志理解
+
+[GC[DefNew:
+
+[Full GC[Tenured
+
+GC与FULL GC是由垃圾收集的停顿类型（不是值新生代或者老年代GC）
+
+DefNew是指Serial收集器里面新生代名为“Default New Generation”
+
+ParNew对应ParNew收集器，指Parallel New Generation
+
+PSYoungGen对应Parallel Scavenge收集器
+
+
+
+例如下面的日志：
+
+`[GC (Allocation Failure) [PSYoungGen: 6268K->815K(9216K)] 6268K->4919K(19456K), 0.0099293 secs] [Times: user=0.00 sys=0.00, real=0.01 secs] `
+
+表示GC开辟新的空间失败，Parallel Scavenge收集器的新生代里，
+
+（方括号里面表示）GC前内存区域使用6268K，GC后815K（总区域9216K）
+
+（方括号外面表示）GC前堆已经使用6268K，GC后4919K（堆总容量19456K）
+
+Times里面分别是用户态消耗CPU时间，内核态CPU时间以及wall clock time
+
+
+
+### 常用配置参数
+
+https://yq.aliyun.com/articles/268842
+
+```sh
+-Xmx3550m 设置JVM堆最大可用内存
+-Xms3550m JVM初始分配的堆内存，一般Xms与Xmx相同避免每次GC后需要调整大小
+-Xmn2g 年轻代大小
+-Xss128K 每个线程的堆栈大小
+-XX:NewRatio=4 设置年轻代（Eden区域+From Survivor + To Survivor）占1/5，老年代占4/5
+-XX:SurvivorRatio=4 年轻代中Eden区域与Survivor区域的比值为4，Eden占据4/6
+-XX:MaxPermSize=16M 设置持久代的大小
+-XX:MaxTenuringThreshold=0 设置垃圾最大年龄：为0表示年轻代对象不经过Survivor区域直接进入老年代，设置较大则年轻代对象会在Survivor区域多次复制，增加年轻代的存活时间以及回收频率
+
+-XX:+PrintGc 打印GC日志
+-XX:+PrintGcDetail 打印GC详细日志
+
+```
+
+还有一些可以选择收集器的参数：
+
+```sh
+-XX:+UseSerialGC  设置收集器为Serial+Serial Old
+-XX:+UseParNewGC  设置收集器为ParNew+Serial Old
+-XX:+UseParallelGC  设置收集器为Parallel Scavenge+Serial Old
+```
+
+还有很多不列举了
+
+
+
+选择：
+
+年轻代大小：响应时间有限需要设置较大减少GC，吞吐优先有需要设置较大
+
+
+
+
+
 ## 内存分配与回收策略
 
 ### 对象优先在Eden分配
@@ -425,11 +496,61 @@ CMS（Concurrent Mark Sweep）收集器是一种以获取最短回收停顿时�
 
 示例:
 
-```
+```sh
 -XX:+PrintGCDetails //虚拟机在发生垃圾收集行为时打印内存回收日志
--Xms20M、-Xmx20M、-Xmn10M	//限制了Java堆大小为20MB，不可扩展
+-Xms20M、-Xmx20M、-Xmn10M	//限制了Java堆大小为20MB，不可扩展，-Xmn是指
 -XX:SurvivorRatio=8			//新生代Eden区域与一个survivor区的空间比例8:1
+-XX:+UseSerialGC			//可以更换垃圾收集器来查看日志
 ```
+
+
+
+代码实例，这里堆的大小20M，10M分给了新生代：
+
+```java
+    private static final int MB = 1024 * 1024;
+
+    public static void testAllocate() {
+        byte[] array1, array2, array3, array4;
+        array1 = new byte[2 * MB];
+        array2 = new byte[2 * MB];
+        array3 = new byte[2 * MB];
+        array4 = new byte[4 * MB];
+    }
+```
+
+
+
+查看日志：
+
+新生代分到10M(-Xmn10M)，其中eden:survivor=8说明eden占据8/10，也就是8192K，两个Survivor分别占1024K，新生代总的可用为9216K，这是指eden区域加上From Survivor
+
+代码申请3个2M的对象以及一个4M的对象
+
+在申请4M对象的时候，因为此时Eden已经占据6M，剩余不足以分配4M，所以产生Minor GC，GC的时候Survivor无法承载，所以产生**分配担保**转移到老年代（老年代占据10M）
+
+本次GC完成后，4M的对象分配在Eden+From Survivor中，To Survivor占据为0，老年代放了6M的对象
+
+
+
+```sh
+[GC (Allocation Failure) 
+[DefNew: 7967K->594K(9216K), 0.0045204 secs] 7967K->6738K(19456K), 0.0045729 secs] [Times: user=0.00 sys=0.02, real=0.00 secs] 
+Heap
+ def new generation   total 9216K, used 4855K [0x00000000fec00000, 0x00000000ff600000, 0x00000000ff600000)
+  eden space 8192K,  52% used [0x00000000fec00000, 0x00000000ff0290f0, 0x00000000ff400000)
+  from space 1024K,  58% used [0x00000000ff500000, 0x00000000ff594b98, 0x00000000ff600000)
+  to   space 1024K,   0% used [0x00000000ff400000, 0x00000000ff400000, 0x00000000ff500000)
+ tenured generation   total 10240K, used 6144K [0x00000000ff600000, 0x0000000100000000, 0x0000000100000000)
+   the space 10240K,  60% used [0x00000000ff600000, 0x00000000ffc00030, 0x00000000ffc00200, 0x0000000100000000)
+ Metaspace       used 3081K, capacity 4496K, committed 4864K, reserved 1056768K
+  class space    used 335K, capacity 388K, committed 512K, reserved 1048576K
+
+Process finished with exit code 0
+
+```
+
+
 
 
 
@@ -439,9 +560,63 @@ CMS（Concurrent Mark Sweep）收集器是一种以获取最短回收停顿时�
 
 
 
+参数：
+
+```sh
+-XX:+PrintGCDetails //虚拟机在发生垃圾收集行为时打印内存回收日志
+-Xms20M、-Xmx20M、-Xmn10M	//限制了Java堆大小为20MB，不可扩展，-Xmn是指
+-XX:SurvivorRatio=8			//新生代Eden区域与一个survivor区的空间比例8:1
+-XX:+UseSerialGC			//可以更换垃圾收集器来查看日志
+-XX:PretenureSizeThreshold=3145728  //大于3M的对象直接在老年代分配
+```
+
+
+
+代码：
+
+```java
+    public static void testPretenureSizeThreshold() {
+        byte[] allocation = new byte[4 * MB];
+    }
+```
+
+
+
+日志可以看出来这个4M对象直接分配在老年代了：
+
+```sh
+Heap
+ tenured generation   total 10240K, used 4096K [0x00000000ff600000, 0x0000000100000000, 0x0000000100000000)
+```
+
+
+
+
+
 ### 长期存活对象进入老年代
 
 Minor GC后，对象在Survivor区域	每经过一次Minor GC，年龄就增加一次，增加到一定程度就会晋升到老年代。这个晋升的年龄阈值，可以在**-XX:MaxTenuringThreshold**设置。
+
+
+
+`-Xms20M -Xmx20M -Xmn10M -XX:+PrintGCDetails -XX:+UseSerialGC -XX:MaxTenuringThreshold=0 -XX:+PrintTenuringDistribution`
+
+`-XX:+PrintTenuringDistribution`可以打印survivor空间有效的对象年龄
+
+
+
+```java
+    public static void testTenuringThreshold() {
+        byte[] allocation1, allocation2, allocation3;
+        allocation1 = new byte[1 * MB];
+        allocation2 = new byte[4 * MB];
+        allocation3 = new byte[4 * MB];
+        allocation3 = null;
+        allocation3 = new byte[4 * MB];
+    }
+```
+
+
 
 
 
